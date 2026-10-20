@@ -19,6 +19,8 @@ from obico import (
     detect_image,
     discover_obico_api_url,
     printer_is_busy,
+    resolve_print_job_state,
+    resolve_printer_state,
     should_press_pause_button,
 )
 
@@ -1759,10 +1761,14 @@ class AnycubicMqttBridge:
                     # Create the combined state message
                     topic_prefix = self.get_topic_prefix()
 
-                    # Save the printer state for the snapshot worker
-                    if "state" in printer_data:
-                        self.printer_state = printer_data["state"]
-                        logger.debug(f"Updated printer state: {self.printer_state}")
+                    # Keep the last known state when an info report omits it.
+                    reported_state = printer_data.get("state")
+                    self.printer_state = resolve_printer_state(
+                        reported_state,
+                        self.current_print_state,
+                        self.printer_state,
+                    )
+                    logger.debug(f"Updated printer state: {self.printer_state}")
 
                     # Also publish a separate fan update if fan data is available
                     if "fan_speed_pct" in printer_data or "aux_fan_speed_pct" in printer_data:
@@ -1846,7 +1852,7 @@ class AnycubicMqttBridge:
                             self.print_controls_created = True
 
                     state_data = {
-                        "state": printer_data.get("state", "unknown"),
+                        "state": self.printer_state,
                         "print_speed_mode": printer_data.get("print_speed_mode", 0),
                         "ip_address": printer_data.get("ip", ""),
                         "camera_url": printer_data.get("urls", {}).get("rtspUrl", ""),
@@ -1903,6 +1909,18 @@ class AnycubicMqttBridge:
                     logger.info(f"Received print job report: action={data.get('action', 'unknown')}, state={data.get('state', 'unknown')}")
                     logger.debug(f"Print job report data: {json.dumps(data)}")
                     try:
+                        self.current_print_state = resolve_print_job_state(
+                            data.get("action"),
+                            data.get("state"),
+                            self.current_print_state,
+                        )
+                        if self.current_print_state == "printing":
+                            self.printer_state = "busy"
+                        elif self.current_print_state == "paused":
+                            self.printer_state = "paused"
+                        elif self.current_print_state == "free":
+                            self.printer_state = "free"
+
                         if "data" in data and data["data"]:
                             print_data = data["data"]
                             
@@ -1912,9 +1930,6 @@ class AnycubicMqttBridge:
                             
                             # Update our stored print data
                             self.latest_print_data.update(print_data)
-                            
-                            # Update the current print state
-                            self.current_print_state = data.get("state", "unknown")
                             
                             # Create/update print sensors if not already created
                             if not hasattr(self, "print_sensors_created") or not self.print_sensors_created:
@@ -1946,7 +1961,12 @@ class AnycubicMqttBridge:
                             logger.debug(f"Published print job update: {json.dumps(print_state)}")
                             
                             # If we receive a completion message, clear the print job data
-                            if data.get("state") == "done":
+                            if data.get("action") in {
+                                "stop",
+                                "cancel",
+                                "finish",
+                                "complete",
+                            }:
                                 logger.info("Print job completed")
                             
                             # Create print controls

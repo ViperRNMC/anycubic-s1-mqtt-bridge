@@ -79,6 +79,37 @@ def printer_is_busy(printer_state):
     return isinstance(printer_state, str) and printer_state.strip().lower() == "busy"
 
 
+def resolve_printer_state(reported_state, print_job_state, previous_state):
+    reported = str(reported_state or "").strip().lower()
+    print_job = str(print_job_state or "").strip().lower()
+    previous = str(previous_state or "").strip().lower()
+    inactive_states = {"", "unknown", "unavailable", "free", "idle", "standby"}
+
+    if print_job == "printing" and reported in inactive_states:
+        return "busy"
+    if print_job == "paused" and reported in inactive_states:
+        return "paused"
+    if reported in {"", "unknown", "unavailable"}:
+        return previous if previous else "unknown"
+    return reported
+
+
+def resolve_print_job_state(action, reported_state, previous_state):
+    action = str(action or "").strip().lower()
+    reported = str(reported_state or "").strip().lower()
+    previous = str(previous_state or "").strip().lower()
+
+    if action == "getsliceparam":
+        return previous or "unknown"
+    if action in {"start", "resume"} and reported in {"printing", "busy"}:
+        return "printing"
+    if action == "pause":
+        return "paused"
+    if action in {"stop", "cancel", "finish", "complete"}:
+        return "free"
+    return previous or "unknown"
+
+
 def should_press_pause_button(error_detected, printer_state, pause_already_requested):
     return (
         error_detected

@@ -10,6 +10,8 @@ from obico import (
     detect_image,
     discover_obico_api_url,
     printer_is_busy,
+    resolve_print_job_state,
+    resolve_printer_state,
     should_press_pause_button,
 )
 
@@ -123,6 +125,23 @@ class PrinterStateTests(unittest.TestCase):
         self.assertTrue(printer_is_busy("busy"))
         self.assertFalse(printer_is_busy("free"))
         self.assertFalse(printer_is_busy("unknown"))
+
+    def test_active_print_wins_over_transient_idle_or_unknown_info(self):
+        self.assertEqual(resolve_printer_state("free", "printing", "busy"), "busy")
+        self.assertEqual(resolve_printer_state("unknown", "printing", "busy"), "busy")
+
+    def test_missing_info_state_preserves_last_known_state(self):
+        self.assertEqual(resolve_printer_state(None, "unknown", "busy"), "busy")
+        self.assertEqual(resolve_printer_state("", "unknown", "free"), "free")
+
+    def test_explicit_free_is_used_when_no_print_is_active(self):
+        self.assertEqual(resolve_printer_state("free", "unknown", "busy"), "free")
+
+    def test_slice_parameter_done_does_not_finish_print(self):
+        self.assertEqual(
+            resolve_print_job_state("getSliceParam", "done", "printing"),
+            "printing",
+        )
 
     def test_pause_button_only_pressed_once_for_busy_printer_failure(self):
         self.assertTrue(should_press_pause_button(True, "busy", False))
