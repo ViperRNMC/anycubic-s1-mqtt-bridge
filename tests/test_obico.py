@@ -2,7 +2,9 @@ import base64
 import unittest
 from unittest.mock import Mock, patch
 
-from obico import detect_image, printer_is_busy
+import requests
+
+from obico import check_api_health, detect_image, printer_is_busy
 
 
 class DetectImageTests(unittest.TestCase):
@@ -59,6 +61,25 @@ class PrinterStateTests(unittest.TestCase):
         self.assertTrue(printer_is_busy("busy"))
         self.assertFalse(printer_is_busy("free"))
         self.assertFalse(printer_is_busy("unknown"))
+
+
+class ObicoHealthTests(unittest.TestCase):
+    @patch("obico.requests.get")
+    def test_health_check_uses_backend_health_route(self, get):
+        response = Mock(status_code=200, text="ok\n")
+        get.return_value = response
+
+        self.assertTrue(check_api_health("http://localhost:3333/detect/"))
+        get.assert_called_once_with("http://localhost:3333/hc/", timeout=3)
+
+    @patch("obico.requests.get")
+    def test_health_check_returns_false_when_backend_is_unavailable(self, get):
+        get.side_effect = requests.ConnectionError("unavailable")
+
+        self.assertFalse(check_api_health("http://localhost:3333/detect/"))
+
+    def test_health_check_rejects_host_without_scheme(self):
+        self.assertFalse(check_api_health("localhost"))
 
 
 if __name__ == "__main__":

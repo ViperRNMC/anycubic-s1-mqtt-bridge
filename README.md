@@ -52,12 +52,21 @@ The application uses environment variables for configuration. You can set the fo
 
 ### Obico ML (Home Assistant add-on)
 
-In the add-on configuration, enable **Obico ML**, enter the Obico ML backend URL
-(including `/detect/`), and set the detection interval and threshold. The
-threshold is between `0` and `1` (default `0.2`). When enabled, the bridge
-registers a communication switch, failure binary sensor, confidence sensor,
-and detection image in Home Assistant through MQTT discovery. The switch can
-pause or resume detection without restarting the add-on.
+Install and start the Obico ML API add-on from
+[mattjacobson6/ha-addons](https://github.com/mattjacobson6/ha-addons) (the
+`obico-ml-api` folder). In this bridge add-on's configuration, enable
+**Obico ML**. The API URL defaults to
+`http://localhost:3333/detect/`, so it normally needs no manual entry. For an
+installation addressed by its add-on hostname, use
+`http://0d2ff00d-obico-ml:3333/detect/` instead. The bridge checks the API's
+`/hc/` health endpoint every 30 seconds and reports Obico entities unavailable
+when it cannot reach the backend; this checks availability, not Supervisor's
+installed-add-on metadata.
+
+Set the detection interval and threshold as needed. The threshold is between
+`0` and `1` (default `0.2`). The bridge registers a communication switch,
+failure binary sensor, confidence sensor, and detection image in Home Assistant
+through MQTT discovery. Detection only runs while the printer state is `busy`.
 
 ## Docker Setup
 

@@ -1,0 +1,13 @@
+configuration:
+  obico_enabled:
+    name: Obico ML inschakelen
+    description: Detectie uitvoeren tijdens het printen als de Obico ML API bereikbaar is.
+  obico_api_url:
+    name: Obico ML API URL
+    description: Standaard http://localhost:3333/detect/. Alleen aanpassen als jouw Obico ML API een ander adres gebruikt.
+  obico_detection_interval:
+    name: Detectie-interval
+    description: Aantal seconden tussen detecties zolang de printer bezig is.
+  obico_threshold:
+    name: Detectiedrempel
+    description: Waarde tussen 0 en 1; standaard 0.2.

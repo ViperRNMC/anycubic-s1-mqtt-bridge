@@ -1,10 +1,28 @@
 import base64
+from urllib.parse import urlsplit, urlunsplit
 
 import requests
 
 
+DEFAULT_OBICO_API_URL = "http://localhost:3333/detect/"
+
+
 def printer_is_busy(printer_state):
     return isinstance(printer_state, str) and printer_state.strip().lower() == "busy"
+
+
+def check_api_health(api_url, timeout=3):
+    try:
+        parsed_url = urlsplit(api_url)
+        if parsed_url.scheme not in ("http", "https") or not parsed_url.netloc:
+            return False
+        health_url = urlunsplit(
+            (parsed_url.scheme, parsed_url.netloc, "/hc/", "", "")
+        )
+        response = requests.get(health_url, timeout=timeout)
+        return response.status_code == 200 and response.text.strip().lower() == "ok"
+    except (requests.RequestException, ValueError):
+        return False
 
 
 def detect_image(image_data, api_url, threshold, timeout=30):

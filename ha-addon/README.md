@@ -52,12 +52,21 @@ The application uses environment variables for configuration. You can set the fo
 
 ### Obico ML
 
-Obico ML is optional and disabled by default. Enable it in the add-on options,
-then enter the Obico ML backend URL (including `/detect/`), detection interval
-in seconds, and detection threshold from `0` to `1` (default `0.2`). When the
-printer camera is available, the add-on creates an Obico communication switch,
-failure binary sensor, confidence sensor, and detection image in Home Assistant.
-The switch pauses detection without changing the add-on configuration.
+Obico ML is optional and disabled by default. Install and start the Obico ML
+API add-on from [mattjacobson6/ha-addons](https://github.com/mattjacobson6/ha-addons)
+(the `obico-ml-api` folder), then enable Obico ML in this add-on's options. The
+API URL defaults to `http://localhost:3333/detect/`, so it normally needs no
+manual entry. For an installation addressed by its add-on hostname, use
+`http://0d2ff00d-obico-ml:3333/detect/` instead. The bridge checks the API's
+`/hc/` health endpoint every 30 seconds and marks Obico entities unavailable
+when the backend cannot be reached. This checks API availability, not whether
+Supervisor reports the add-on as installed.
+
+Set the detection interval and threshold as needed. The threshold is between
+`0` and `1` (default `0.2`). When the printer camera is available, the bridge
+creates an Obico communication switch, failure binary sensor, confidence
+sensor, and detection image in Home Assistant. Detection only runs while the
+printer state is `busy`; the switch pauses it without restarting the add-on.
 
 To pause the printer automatically when Obico detects a failure, create this
 Home Assistant automation. Change the binary sensor entity ID if Home

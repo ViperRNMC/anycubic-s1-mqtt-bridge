@@ -11,7 +11,12 @@ import requests
 from threading import Thread, Event
 import traceback
 import random
-from obico import detect_image, printer_is_busy
+from obico import (
+    DEFAULT_OBICO_API_URL,
+    check_api_health,
+    detect_image,
+    printer_is_busy,
+)
 
 # Load configuration from .env file if present
 load_dotenv()
@@ -51,7 +56,10 @@ OBICO_ENABLED = get_required_env("OBICO_ENABLED", "false").lower() in (
     "yes",
     "on",
 )
-OBICO_API_URL = get_required_env("OBICO_API_URL", "")
+OBICO_API_URL = (
+    get_required_env("OBICO_API_URL", DEFAULT_OBICO_API_URL).strip()
+    or DEFAULT_OBICO_API_URL
+)
 OBICO_DETECTION_INTERVAL = int(get_required_env("OBICO_DETECTION_INTERVAL", "30"))
 OBICO_THRESHOLD = float(get_required_env("OBICO_THRESHOLD", "0.2"))
 
@@ -666,7 +674,7 @@ class AnycubicMqttBridge:
                     self._mark_migration_cleanup_done()
             except Exception as e:
                 logger.debug(f"Cleanup flag check failed: {e}")
-            if OBICO_ENABLED and self.stream_url:
+            if OBICO_ENABLED:
                 self._create_obico_entities()
                 self._start_obico_worker()
             elif not OBICO_ENABLED:
@@ -814,7 +822,7 @@ class AnycubicMqttBridge:
             "ON" if self.obico_active.is_set() else "OFF",
             retain=True,
         )
-        self.ha_client.publish(availability_topic, "online", retain=True)
+        self.ha_client.publish(availability_topic, "offline", retain=True)
         self.obico_entities_created = True
         logger.info("Created Obico ML entities in Home Assistant")
 
@@ -844,14 +852,38 @@ class AnycubicMqttBridge:
     def obico_worker(self):
         topic_prefix = self.get_topic_prefix()
         state_topic = f"homeassistant/sensor/{topic_prefix}/obico"
+        availability_topic = f"{state_topic}/availability"
         next_detection = 0
+        next_health_check = 0
+        api_available = False
+        previous_health_state = None
 
         while running:
+            current_time = time.monotonic()
+            if current_time >= next_health_check:
+                api_available = check_api_health(OBICO_API_URL)
+                health_state = "online" if api_available else "offline"
+                self.ha_client.publish(
+                    availability_topic, health_state, retain=True
+                )
+                if health_state != previous_health_state:
+                    if api_available:
+                        logger.info("Obico ML API is reachable at %s", OBICO_API_URL)
+                    else:
+                        logger.warning(
+                            "Obico ML API is unavailable at %s; install and start the Obico ML add-on",
+                            OBICO_API_URL,
+                        )
+                    previous_health_state = health_state
+                next_health_check = current_time + 30
+
             if (
+                not api_available
+                or
                 not self.obico_active.is_set()
                 or not self.snapshot_enabled.is_set()
                 or not printer_is_busy(self.printer_state)
-                or time.monotonic() < next_detection
+                or current_time < next_detection
             ):
                 time.sleep(1)
                 continue
