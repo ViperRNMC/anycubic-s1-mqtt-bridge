@@ -115,6 +115,7 @@ class DetectImageTests(unittest.TestCase):
             result,
             {
                 "error_detected": True,
+                "detection_count": 2,
                 "avg_confidence": 70.0,
                 "image_with_errors": b"annotated",
             },
@@ -132,6 +133,7 @@ class DetectImageTests(unittest.TestCase):
             result,
             {
                 "error_detected": False,
+                "detection_count": 0,
                 "avg_confidence": 0,
                 "image_with_errors": None,
             },

@@ -226,6 +226,7 @@ def detect_image(image_data, api_url, threshold, timeout=30):
 
     return {
         "error_detected": bool(detections),
+        "detection_count": len(detections),
         "avg_confidence": average_confidence,
         "image_with_errors": image_with_errors,
     }

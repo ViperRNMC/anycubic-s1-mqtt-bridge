@@ -920,6 +920,12 @@ class AnycubicMqttBridge:
                 if not image_data:
                     logger.warning("Obico ML skipped: printer snapshot unavailable")
                 else:
+                    logger.info(
+                        "Obico ML sending snapshot: bytes=%d jpeg=%s threshold=%.2f",
+                        len(image_data),
+                        image_data.startswith(b"\xff\xd8"),
+                        OBICO_THRESHOLD,
+                    )
                     result = detect_image(
                         image_data,
                         api_url,
@@ -946,7 +952,8 @@ class AnycubicMqttBridge:
                         retain=True,
                     )
                     logger.info(
-                        "Obico ML result: failure=%s confidence=%s%%",
+                        "Obico ML result: detections=%d failure=%s confidence=%s%%",
+                        result["detection_count"],
                         result["error_detected"],
                         result["avg_confidence"],
                     )
