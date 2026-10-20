@@ -11,6 +11,7 @@ import requests
 from threading import Thread, Event
 import traceback
 import random
+from obico import detect_image
 
 # Load configuration from .env file if present
 load_dotenv()
@@ -44,6 +45,22 @@ HA_BROKER = get_required_env("HA_BROKER", required=True)
 HA_PORT = int(get_required_env("HA_PORT", "1883"))
 HA_USER = get_required_env("HA_USER")  # Optional
 HA_PASS = get_required_env("HA_PASS")  # Optional
+OBICO_ENABLED = get_required_env("OBICO_ENABLED", "false").lower() in (
+    "true",
+    "1",
+    "yes",
+    "on",
+)
+OBICO_API_URL = get_required_env("OBICO_API_URL", "")
+OBICO_DETECTION_INTERVAL = int(get_required_env("OBICO_DETECTION_INTERVAL", "30"))
+OBICO_THRESHOLD = float(get_required_env("OBICO_THRESHOLD", "0.2"))
+
+if OBICO_ENABLED and not OBICO_API_URL:
+    raise ValueError("OBICO_API_URL is required when Obico ML is enabled")
+if OBICO_DETECTION_INTERVAL < 1:
+    raise ValueError("OBICO_DETECTION_INTERVAL must be at least 1 second")
+if not 0 <= OBICO_THRESHOLD <= 1:
+    raise ValueError("OBICO_THRESHOLD must be between 0 and 1")
 
 # MQTT Configuration
 KEEPALIVE_INTERVAL = int(get_required_env("KEEPALIVE_INTERVAL", "60"))
@@ -91,6 +108,11 @@ class AnycubicMqttBridge:
 
         self.info_update_interval = int(get_required_env("INFO_UPDATE_INTERVAL", "30"))
         self.snapshot_thread = None
+        self.obico_thread = None
+        self.obico_entities_created = False
+        self.obico_active = Event()
+        if OBICO_ENABLED:
+            self.obico_active.set()
         self.info_thread = None
         self.connection_monitor_thread = None
         self.printer_state = "unknown"  # Track the printer state
@@ -644,6 +666,11 @@ class AnycubicMqttBridge:
                     self._mark_migration_cleanup_done()
             except Exception as e:
                 logger.debug(f"Cleanup flag check failed: {e}")
+            if OBICO_ENABLED and self.stream_url:
+                self._create_obico_entities()
+                self._start_obico_worker()
+            elif not OBICO_ENABLED:
+                self._cleanup_obico_discovery_entities()
         else:
             logger.error(
                 f"Failed to connect to Home Assistant broker, return code: {rc}"
@@ -680,6 +707,193 @@ class AnycubicMqttBridge:
                 f.write("done")
         except Exception:
             pass
+
+    def _cleanup_obico_discovery_entities(self):
+        topic_prefix = self.get_topic_prefix()
+        for component, unique_id in (
+            ("switch", f"{topic_prefix}_obico_communication"),
+            ("binary_sensor", f"{topic_prefix}_obico_failure"),
+            ("sensor", f"{topic_prefix}_obico_confidence"),
+            ("image", f"{topic_prefix}_obico_detection"),
+        ):
+            self.ha_client.publish(
+                f"homeassistant/{component}/{unique_id}/config", "", retain=True
+            )
+        for topic in (
+            f"homeassistant/sensor/{topic_prefix}/obico",
+            f"homeassistant/sensor/{topic_prefix}/obico/availability",
+            f"homeassistant/sensor/{topic_prefix}/obico/image",
+            f"homeassistant/sensor/{topic_prefix}/obico/image_state",
+            f"homeassistant/switch/{topic_prefix}_obico/state",
+        ):
+            self.ha_client.publish(topic, "", retain=True)
+
+    def _create_obico_entities(self):
+        if self.obico_entities_created or not self.ha_client.is_connected():
+            return
+
+        topic_prefix = self.get_topic_prefix()
+        device_info = self.get_device_info()
+        state_topic = f"homeassistant/sensor/{topic_prefix}/obico"
+        availability_topic = f"homeassistant/sensor/{topic_prefix}/obico/availability"
+        switch_state_topic = f"homeassistant/switch/{topic_prefix}_obico/state"
+        switch_command_topic = f"homeassistant/switch/{topic_prefix}_obico/set"
+        entities = (
+            (
+                "switch",
+                f"{topic_prefix}_obico_communication",
+                {
+                    "name": "Obico ML Communication",
+                    "state_topic": switch_state_topic,
+                    "command_topic": switch_command_topic,
+                    "payload_on": "ON",
+                    "payload_off": "OFF",
+                    "state_on": "ON",
+                    "state_off": "OFF",
+                    "availability_topic": availability_topic,
+                    "icon": "mdi:robot",
+                    "device": device_info,
+                },
+            ),
+            (
+                "binary_sensor",
+                f"{topic_prefix}_obico_failure",
+                {
+                    "name": "Obico ML Failure Detected",
+                    "state_topic": state_topic,
+                    "value_template": "{{ 'ON' if value_json.error_detected else 'OFF' }}",
+                    "payload_on": "ON",
+                    "payload_off": "OFF",
+                    "device_class": "problem",
+                    "availability_topic": availability_topic,
+                    "device": device_info,
+                },
+            ),
+            (
+                "sensor",
+                f"{topic_prefix}_obico_confidence",
+                {
+                    "name": "Obico ML Failure Confidence",
+                    "state_topic": state_topic,
+                    "value_template": "{{ value_json.avg_confidence }}",
+                    "unit_of_measurement": "%",
+                    "state_class": "measurement",
+                    "availability_topic": availability_topic,
+                    "icon": "mdi:chart-line",
+                    "device": device_info,
+                },
+            ),
+            (
+                "image",
+                f"{topic_prefix}_obico_detection",
+                {
+                    "name": "Obico ML Detection Image",
+                    "state_topic": f"{state_topic}/image_state",
+                    "image_topic": f"{state_topic}/image",
+                    "content_type": "image/jpeg",
+                    "availability_topic": availability_topic,
+                    "device": device_info,
+                },
+            ),
+        )
+
+        for component, unique_id, config in entities:
+            config["unique_id"] = unique_id
+            self.ha_client.publish(
+                f"homeassistant/{component}/{unique_id}/config",
+                json.dumps(config),
+                retain=True,
+            )
+
+        self.ha_client.subscribe(switch_command_topic)
+        self.ha_client.message_callback_add(
+            switch_command_topic, self._on_obico_switch_command
+        )
+        self.ha_client.publish(
+            switch_state_topic,
+            "ON" if self.obico_active.is_set() else "OFF",
+            retain=True,
+        )
+        self.ha_client.publish(availability_topic, "online", retain=True)
+        self.obico_entities_created = True
+        logger.info("Created Obico ML entities in Home Assistant")
+
+    def _on_obico_switch_command(self, client, userdata, msg):
+        payload = msg.payload.decode("utf-8").strip().upper()
+        if payload == "ON":
+            self.obico_active.set()
+        elif payload == "OFF":
+            self.obico_active.clear()
+        else:
+            logger.warning("Ignoring invalid Obico switch value: %s", payload)
+            return
+
+        client.publish(msg.topic.rsplit("/", 1)[0] + "/state", payload, retain=True)
+
+    def _start_obico_worker(self):
+        if not OBICO_ENABLED:
+            return
+        if self.obico_thread is None or not self.obico_thread.is_alive():
+            self.obico_thread = Thread(target=self.obico_worker, daemon=True)
+            self.obico_thread.start()
+            logger.info(
+                "Started Obico ML worker with interval %ss",
+                OBICO_DETECTION_INTERVAL,
+            )
+
+    def obico_worker(self):
+        topic_prefix = self.get_topic_prefix()
+        state_topic = f"homeassistant/sensor/{topic_prefix}/obico"
+        next_detection = 0
+
+        while running:
+            if (
+                not self.obico_active.is_set()
+                or not self.snapshot_enabled.is_set()
+                or time.monotonic() < next_detection
+            ):
+                time.sleep(1)
+                continue
+
+            try:
+                image_data = self.take_snapshot()
+                if not image_data:
+                    logger.warning("Obico ML skipped: printer snapshot unavailable")
+                else:
+                    result = detect_image(
+                        image_data,
+                        OBICO_API_URL,
+                        OBICO_THRESHOLD,
+                    )
+                    self.ha_client.publish(
+                        state_topic,
+                        json.dumps(
+                            {
+                                "error_detected": result["error_detected"],
+                                "avg_confidence": result["avg_confidence"],
+                                "last_updated": time.strftime("%Y-%m-%d %H:%M:%S"),
+                            }
+                        ),
+                        retain=True,
+                    )
+                    detection_image = result["image_with_errors"] or image_data
+                    self.ha_client.publish(
+                        f"{state_topic}/image", detection_image, retain=True
+                    )
+                    self.ha_client.publish(
+                        f"{state_topic}/image_state",
+                        time.strftime("%Y-%m-%d %H:%M:%S"),
+                        retain=True,
+                    )
+                    logger.info(
+                        "Obico ML result: failure=%s confidence=%s%%",
+                        result["error_detected"],
+                        result["avg_confidence"],
+                    )
+            except Exception as e:
+                logger.warning("Obico ML detection failed: %s", e)
+
+            next_detection = time.monotonic() + OBICO_DETECTION_INTERVAL
 
     def on_ha_disconnect(self, client, userdata, rc):
         """Handle disconnection from Home Assistant broker"""
@@ -1465,6 +1679,10 @@ class AnycubicMqttBridge:
                             logger.info(
                                 f"Started snapshot thread with interval {self.snapshot_interval}s"
                             )
+
+                        if OBICO_ENABLED:
+                            self._create_obico_entities()
+                            self._start_obico_worker()
 
                     # Publish all sensor configurations
                     for sensor in sensors:

@@ -50,6 +50,15 @@ The application uses environment variables for configuration. You can set the fo
 - `SNAPSHOT_INTERVAL_BUSY`: Interval for taking snapshots when printer is busy.
 - `INFO_UPDATE_INTERVAL`: Interval for updating printer information.
 
+### Obico ML
+
+Obico ML is optional and disabled by default. Enable it in the add-on options,
+then enter the Obico ML backend URL (including `/detect/`), detection interval
+in seconds, and detection threshold from `0` to `1` (default `0.2`). When the
+printer camera is available, the add-on creates an Obico communication switch,
+failure binary sensor, confidence sensor, and detection image in Home Assistant.
+The switch pauses detection without changing the add-on configuration.
+
 ## Docker Setup
 
 To run the application using Docker, you can use the provided `Dockerfile` and `docker-compose.yml`.

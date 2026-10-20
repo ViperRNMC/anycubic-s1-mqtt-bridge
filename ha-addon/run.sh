@@ -11,6 +11,10 @@ mqtt_pass="$(jq -r '.mqtt_pass // ""' "$json_file")"
 snap_idle="$(jq -r '.snapshot_interval_idle' "$json_file")"
 snap_busy="$(jq -r '.snapshot_interval_busy' "$json_file")"
 info_int="$(jq -r '.info_update_interval' "$json_file")"
+obico_enabled="$(jq -r '.obico_enabled // false' "$json_file")"
+obico_api_url="$(jq -r '.obico_api_url // ""' "$json_file")"
+obico_interval="$(jq -r '.obico_detection_interval // 30' "$json_file")"
+obico_threshold="$(jq -r '.obico_threshold // 0.2' "$json_file")"
 
 export ANYCUBIC_S1_IP="$anycubic_ip"
 
@@ -23,6 +27,10 @@ export HA_PASS="$mqtt_pass"
 export SNAPSHOT_INTERVAL_IDLE="$snap_idle"
 export SNAPSHOT_INTERVAL_BUSY="$snap_busy"
 export INFO_UPDATE_INTERVAL="$info_int"
+export OBICO_ENABLED="$obico_enabled"
+export OBICO_API_URL="$obico_api_url"
+export OBICO_DETECTION_INTERVAL="$obico_interval"
+export OBICO_THRESHOLD="$obico_threshold"
 
 cd /anycubic
 exec python3 asm.py
