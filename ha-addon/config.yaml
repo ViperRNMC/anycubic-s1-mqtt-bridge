@@ -39,4 +39,4 @@ schema:
   obico_enabled: bool
   obico_api_url: str
   obico_detection_interval: int(1,)
-  obico_threshold: float(0, 1)
+  obico_threshold: float(0,1)
