@@ -4,7 +4,12 @@ from unittest.mock import Mock, patch
 
 import requests
 
-from obico import check_api_health, detect_image, printer_is_busy
+from obico import (
+    check_api_health,
+    detect_image,
+    printer_is_busy,
+    should_press_pause_button,
+)
 
 
 class DetectImageTests(unittest.TestCase):
@@ -61,6 +66,12 @@ class PrinterStateTests(unittest.TestCase):
         self.assertTrue(printer_is_busy("busy"))
         self.assertFalse(printer_is_busy("free"))
         self.assertFalse(printer_is_busy("unknown"))
+
+    def test_pause_button_only_pressed_once_for_busy_printer_failure(self):
+        self.assertTrue(should_press_pause_button(True, "busy", False))
+        self.assertFalse(should_press_pause_button(True, "free", False))
+        self.assertFalse(should_press_pause_button(True, "busy", True))
+        self.assertFalse(should_press_pause_button(False, "busy", False))
 
 
 class ObicoHealthTests(unittest.TestCase):

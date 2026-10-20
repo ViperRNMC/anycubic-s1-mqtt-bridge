@@ -1,7 +1,7 @@
 configuration:
   obico_enabled:
     name: Obico ML inschakelen
-    description: Detectie uitvoeren tijdens het printen als de Obico ML API bereikbaar is.
+    description: Detectie uitvoeren tijdens het printen; bij een fout wordt de bestaande Pauzeer-afdrukknop gebruikt.
   obico_api_url:
     name: Obico ML API URL
     description: Standaard http://localhost:3333/detect/. Alleen aanpassen als jouw Obico ML API een ander adres gebruikt.

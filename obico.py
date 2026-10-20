@@ -11,6 +11,14 @@ def printer_is_busy(printer_state):
     return isinstance(printer_state, str) and printer_state.strip().lower() == "busy"
 
 
+def should_press_pause_button(error_detected, printer_state, pause_already_requested):
+    return (
+        error_detected
+        and printer_is_busy(printer_state)
+        and not pause_already_requested
+    )
+
+
 def check_api_health(api_url, timeout=3):
     try:
         parsed_url = urlsplit(api_url)

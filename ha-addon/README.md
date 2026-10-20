@@ -65,28 +65,11 @@ Set the detection interval and threshold as needed. The threshold is between
 `0` and `1` (default `0.2`). When the printer camera is available, the bridge
 creates an Obico communication switch, failure binary sensor, confidence
 sensor, and detection image in Home Assistant. Detection only runs while the
-printer state is `busy`; the switch pauses it without restarting the add-on.
-
-To pause the printer automatically when Obico detects a failure, create this
-Home Assistant automation. Change the binary sensor entity ID if Home
-Assistant assigned it a different name:
-
-```yaml
-alias: Pause printer on Obico failure
-triggers:
-   - trigger: state
-      entity_id: binary_sensor.obico_ml_failure_detected
-      to: "on"
-conditions:
-   - condition: state
-      entity_id: sensor.anycubic_kobra_s1_printer_state
-      state: "busy"
-actions:
-   - action: button.press
-      target:
-         entity_id: button.anycubic_printer_pause_print
-mode: single
-```
+printer state is `busy`. When Obico detects a failure during `busy`, the bridge
+presses the existing Pause Print button once for that failure. It will not
+send another pause until a clean detection or the printer leaves `busy`. The
+Obico communication switch still pauses detection without restarting the
+add-on.
 
 ## Docker Setup
 

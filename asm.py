@@ -16,6 +16,7 @@ from obico import (
     check_api_health,
     detect_image,
     printer_is_busy,
+    should_press_pause_button,
 )
 
 # Load configuration from .env file if present
@@ -118,6 +119,7 @@ class AnycubicMqttBridge:
         self.snapshot_thread = None
         self.obico_thread = None
         self.obico_entities_created = False
+        self.obico_pause_latched = False
         self.obico_active = Event()
         if OBICO_ENABLED:
             self.obico_active.set()
@@ -860,6 +862,9 @@ class AnycubicMqttBridge:
 
         while running:
             current_time = time.monotonic()
+            if not printer_is_busy(self.printer_state):
+                self.obico_pause_latched = False
+
             if current_time >= next_health_check:
                 api_available = check_api_health(OBICO_API_URL)
                 health_state = "online" if api_available else "offline"
@@ -923,6 +928,21 @@ class AnycubicMqttBridge:
                         result["error_detected"],
                         result["avg_confidence"],
                     )
+                    if should_press_pause_button(
+                        result["error_detected"],
+                        self.printer_state,
+                        self.obico_pause_latched,
+                    ):
+                        pause_command_topic = (
+                            f"homeassistant/button/{topic_prefix}_pause_print/command"
+                        )
+                        self.ha_client.publish(pause_command_topic, "PRESS")
+                        self.obico_pause_latched = True
+                        logger.warning(
+                            "Obico ML detected a failure; pressing the Pause Print button"
+                        )
+                    elif not result["error_detected"]:
+                        self.obico_pause_latched = False
             except Exception as e:
                 logger.warning("Obico ML detection failed: %s", e)
 
