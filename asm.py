@@ -14,10 +14,12 @@ import random
 from obico import (
     DEFAULT_OBICO_API_HOST,
     DEFAULT_OBICO_API_URL,
+    build_print_job_state,
     build_api_url,
     check_api_health,
     detect_image,
     discover_obico_api_url,
+    merge_print_data,
     printer_is_busy,
     resolve_print_job_state,
     resolve_printer_state,
@@ -1817,25 +1819,24 @@ class AnycubicMqttBridge:
                         if not hasattr(self, "latest_print_data"):
                             self.latest_print_data = {}
                         
-                        # Update our stored print data with project info
-                        self.latest_print_data.update(project_data)
+                        # Merge project reports because some omit progress fields.
+                        self.latest_print_data = merge_print_data(
+                            self.latest_print_data,
+                            project_data,
+                            self.current_print_state,
+                        )
                         
                         # Create/update print sensors if not already created
                         if not hasattr(self, "print_sensors_created") or not self.print_sensors_created:
                             self._create_print_sensors()
                         
                         # Create print job state update
-                        print_state = {
-                            "filename": project_data.get("filename", ""),
-                            "progress": project_data.get("progress", 0),
-                            "current_layer": project_data.get("curr_layer", 0),
-                            "total_layers": project_data.get("total_layers", 0),
-                            "print_time": project_data.get("print_time", 0),
-                            "remaining_time": project_data.get("remain_time", 0),
-                            "material_usage": project_data.get("supplies_usage", 0),
-                            "state": self.current_print_state,  # Use the current print state
-                            "last_updated": time.strftime("%Y-%m-%d %H:%M:%S"),
-                        }
+                        print_state = build_print_job_state(
+                            self.latest_print_data, self.current_print_state
+                        )
+                        print_state["last_updated"] = time.strftime(
+                            "%Y-%m-%d %H:%M:%S"
+                        )
                         
                         # Publish print job data to Home Assistant
                         self.ha_client.publish(
@@ -1909,6 +1910,7 @@ class AnycubicMqttBridge:
                     logger.info(f"Received print job report: action={data.get('action', 'unknown')}, state={data.get('state', 'unknown')}")
                     logger.debug(f"Print job report data: {json.dumps(data)}")
                     try:
+                        previous_print_state = self.current_print_state
                         self.current_print_state = resolve_print_job_state(
                             data.get("action"),
                             data.get("state"),
@@ -1929,7 +1931,15 @@ class AnycubicMqttBridge:
                                 self.latest_print_data = {}
                             
                             # Update our stored print data
-                            self.latest_print_data.update(print_data)
+                            self.latest_print_data = merge_print_data(
+                                self.latest_print_data,
+                                print_data,
+                                self.current_print_state,
+                                reset=(
+                                    data.get("action") == "start"
+                                    and previous_print_state != "printing"
+                                ),
+                            )
                             
                             # Create/update print sensors if not already created
                             if not hasattr(self, "print_sensors_created") or not self.print_sensors_created:
@@ -1939,17 +1949,12 @@ class AnycubicMqttBridge:
                             topic_prefix = self.get_topic_prefix()
                             
                             # Create a state update with print job information
-                            print_state = {
-                                "filename": print_data.get("filename", ""),
-                                "progress": print_data.get("progress", 0),
-                                "current_layer": print_data.get("curr_layer", 0),
-                                "total_layers": print_data.get("total_layers", 0),
-                                "print_time": print_data.get("print_time", 0),
-                                "remaining_time": print_data.get("remain_time", 0),
-                                "material_usage": print_data.get("supplies_usage", 0),
-                                "state": self.current_print_state,  # Use the current print state
-                                "last_updated": time.strftime("%Y-%m-%d %H:%M:%S"),
-                            }
+                            print_state = build_print_job_state(
+                                self.latest_print_data, self.current_print_state
+                            )
+                            print_state["last_updated"] = time.strftime(
+                                "%Y-%m-%d %H:%M:%S"
+                            )
                             
                             # Publish print job data to Home Assistant
                             self.ha_client.publish(
