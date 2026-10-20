@@ -12,7 +12,9 @@ from threading import Thread, Event
 import traceback
 import random
 from obico import (
+    DEFAULT_OBICO_API_HOST,
     DEFAULT_OBICO_API_URL,
+    build_api_url,
     check_api_health,
     detect_image,
     printer_is_busy,
@@ -57,9 +59,8 @@ OBICO_ENABLED = get_required_env("OBICO_ENABLED", "false").lower() in (
     "yes",
     "on",
 )
-OBICO_API_URL = (
-    get_required_env("OBICO_API_URL", DEFAULT_OBICO_API_URL).strip()
-    or DEFAULT_OBICO_API_URL
+OBICO_API_URL = build_api_url(
+    get_required_env("OBICO_API_URL", DEFAULT_OBICO_API_HOST)
 )
 OBICO_DETECTION_INTERVAL = int(get_required_env("OBICO_DETECTION_INTERVAL", "30"))
 OBICO_THRESHOLD = float(get_required_env("OBICO_THRESHOLD", "0.2"))

@@ -5,6 +5,33 @@ import requests
 
 
 DEFAULT_OBICO_API_URL = "http://localhost:3333/detect/"
+DEFAULT_OBICO_API_HOST = "localhost"
+
+
+def build_api_url(api_host):
+    value = (api_host or "").strip()
+    if not value:
+        value = DEFAULT_OBICO_API_HOST
+
+    if "://" in value:
+        return value
+
+    parsed_host = urlsplit(f"http://{value}")
+    if not parsed_host.netloc:
+        raise ValueError("Obico API hostname is invalid")
+
+    netloc = parsed_host.netloc
+    if parsed_host.port is None:
+        netloc = f"{netloc}:3333"
+    path = parsed_host.path.rstrip("/")
+    if not path or path == "/":
+        path = "/detect/"
+    elif path != "/detect":
+        raise ValueError("Use only the Obico API hostname")
+    else:
+        path = "/detect/"
+
+    return urlunsplit(("http", netloc, path, "", ""))
 
 
 def printer_is_busy(printer_state):

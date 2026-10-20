@@ -3,8 +3,8 @@ configuration:
     name: Obico ML inschakelen
     description: Detectie uitvoeren tijdens het printen; bij een fout wordt de bestaande Pauzeer-afdrukknop gebruikt.
   obico_api_url:
-    name: Obico ML API URL
-    description: Standaard http://localhost:3333/detect/. Alleen aanpassen als jouw Obico ML API een ander adres gebruikt.
+    name: Obico ML-hostnaam
+    description: Alleen de hostname invullen, bijvoorbeeld localhost. De bridge voegt automatisch http, poort 3333 en /detect/ toe.
   obico_detection_interval:
     name: Detectie-interval
     description: Aantal seconden tussen detecties zolang de printer bezig is.

@@ -5,11 +5,27 @@ from unittest.mock import Mock, patch
 import requests
 
 from obico import (
+    build_api_url,
     check_api_health,
     detect_image,
     printer_is_busy,
     should_press_pause_button,
 )
+
+
+class ObicoUrlTests(unittest.TestCase):
+    def test_hostname_expands_to_fixed_http_endpoint(self):
+        self.assertEqual(
+            build_api_url("0d2ff00d-obico-ml"),
+            "http://0d2ff00d-obico-ml:3333/detect/",
+        )
+
+    def test_full_url_remains_compatible(self):
+        url = "http://10.0.0.150:3333/detect/"
+        self.assertEqual(build_api_url(url), url)
+
+    def test_blank_hostname_uses_localhost(self):
+        self.assertEqual(build_api_url(""), "http://localhost:3333/detect/")
 
 
 class DetectImageTests(unittest.TestCase):

@@ -55,12 +55,13 @@ The application uses environment variables for configuration. You can set the fo
 Install and start the Obico ML API add-on from
 [mattjacobson6/ha-addons](https://github.com/mattjacobson6/ha-addons) (the
 `obico-ml-api` folder). In this bridge add-on's configuration, enable
-**Obico ML**. The API URL defaults to
-`http://localhost:3333/detect/`, so it normally needs no manual entry. For
-another network setup, enter the API's reachable URL. The bridge checks the
-API's `/hc/` health endpoint every 30 seconds and reports Obico entities
-unavailable when it cannot reach the backend. This confirms API availability,
-not whether Supervisor reports the add-on as installed.
+**Obico ML**. Enter only the Obico add-on hostname (default `localhost`); the
+bridge automatically adds `http://`, port `3333`, and `/detect/`. For example,
+use `0d2ff00d-obico-ml` as the hostname in your setup. Complete API URLs are
+still accepted. The bridge checks the API's `/hc/` health endpoint every 30
+seconds and reports Obico entities unavailable when it cannot reach the
+backend. This confirms API availability, not whether Supervisor reports the
+add-on as installed.
 
 Set the detection interval and threshold as needed. The threshold is between
 `0` and `1` (default `0.2`). The bridge registers a communication switch,
