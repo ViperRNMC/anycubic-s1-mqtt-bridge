@@ -17,6 +17,7 @@ from obico import (
     build_api_url,
     check_api_health,
     detect_image,
+    discover_obico_api_url,
     printer_is_busy,
     should_press_pause_button,
 )
@@ -62,6 +63,7 @@ OBICO_ENABLED = get_required_env("OBICO_ENABLED", "false").lower() in (
 OBICO_API_URL = build_api_url(
     get_required_env("OBICO_API_URL", DEFAULT_OBICO_API_HOST)
 )
+SUPERVISOR_TOKEN = get_required_env("SUPERVISOR_TOKEN", "")
 OBICO_DETECTION_INTERVAL = int(get_required_env("OBICO_DETECTION_INTERVAL", "30"))
 OBICO_THRESHOLD = float(get_required_env("OBICO_THRESHOLD", "0.2"))
 
@@ -860,6 +862,7 @@ class AnycubicMqttBridge:
         next_health_check = 0
         api_available = False
         previous_health_state = None
+        api_url = OBICO_API_URL
 
         while running:
             current_time = time.monotonic()
@@ -867,18 +870,24 @@ class AnycubicMqttBridge:
                 self.obico_pause_latched = False
 
             if current_time >= next_health_check:
-                api_available = check_api_health(OBICO_API_URL)
+                discovered_api_url = discover_obico_api_url(
+                    SUPERVISOR_TOKEN, OBICO_API_URL
+                )
+                if discovered_api_url != api_url:
+                    api_url = discovered_api_url
+                    logger.info("Using Obico ML API at %s", api_url)
+                api_available = check_api_health(api_url)
                 health_state = "online" if api_available else "offline"
                 self.ha_client.publish(
                     availability_topic, health_state, retain=True
                 )
                 if health_state != previous_health_state:
                     if api_available:
-                        logger.info("Obico ML API is reachable at %s", OBICO_API_URL)
+                        logger.info("Obico ML API is reachable at %s", api_url)
                     else:
                         logger.warning(
                             "Obico ML API is unavailable at %s; install and start the Obico ML add-on",
-                            OBICO_API_URL,
+                            api_url,
                         )
                     previous_health_state = health_state
                 next_health_check = current_time + 30
@@ -901,7 +910,7 @@ class AnycubicMqttBridge:
                 else:
                     result = detect_image(
                         image_data,
-                        OBICO_API_URL,
+                        api_url,
                         OBICO_THRESHOLD,
                     )
                     self.ha_client.publish(

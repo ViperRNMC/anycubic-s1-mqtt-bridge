@@ -6,6 +6,7 @@ import requests
 
 DEFAULT_OBICO_API_URL = "http://localhost:3333/detect/"
 DEFAULT_OBICO_API_HOST = "localhost"
+SUPERVISOR_API_URL = "http://supervisor"
 
 
 def build_api_url(api_host):
@@ -32,6 +33,46 @@ def build_api_url(api_host):
         path = "/detect/"
 
     return urlunsplit(("http", netloc, path, "", ""))
+
+
+def discover_obico_api_url(supervisor_token, fallback_host, timeout=3):
+    fallback_url = build_api_url(fallback_host)
+    if not supervisor_token:
+        return fallback_url
+
+    headers = {"Authorization": f"Bearer {supervisor_token}"}
+    try:
+        response = requests.get(
+            f"{SUPERVISOR_API_URL}/addons", headers=headers, timeout=timeout
+        )
+        response.raise_for_status()
+        addons = response.json().get("data", {}).get("addons", [])
+        obico_addon = next(
+            (
+                addon
+                for addon in addons
+                if addon.get("name", "").strip().casefold() == "obico ml"
+                or addon.get("slug", "").endswith("_obico_ml")
+            ),
+            None,
+        )
+        if obico_addon is None:
+            return fallback_url
+
+        slug = obico_addon.get("slug")
+        if not slug:
+            return fallback_url
+
+        info_response = requests.get(
+            f"{SUPERVISOR_API_URL}/addons/{slug}/info",
+            headers=headers,
+            timeout=timeout,
+        )
+        info_response.raise_for_status()
+        hostname = info_response.json().get("data", {}).get("hostname")
+        return build_api_url(hostname) if hostname else fallback_url
+    except (requests.RequestException, ValueError, TypeError, AttributeError):
+        return fallback_url
 
 
 def printer_is_busy(printer_state):

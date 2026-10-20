@@ -3,8 +3,8 @@ configuration:
     name: Obico ML inschakelen
     description: Detectie uitvoeren tijdens het printen; bij een fout wordt de bestaande Pauzeer-afdrukknop gebruikt.
   obico_api_url:
-    name: Obico ML-hostnaam
-    description: Alleen de hostname invullen, bijvoorbeeld localhost. De bridge voegt automatisch http, poort 3333 en /detect/ toe.
+    name: Obico ML-hostnaam (fallback)
+    description: Alleen gebruikt als Supervisor de Obico ML-add-on niet kan vinden; vul alleen de hostname in.
   obico_detection_interval:
     name: Detectie-interval
     description: Aantal seconden tussen detecties zolang de printer bezig is.

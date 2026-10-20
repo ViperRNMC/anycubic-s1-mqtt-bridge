@@ -8,6 +8,7 @@ from obico import (
     build_api_url,
     check_api_health,
     detect_image,
+    discover_obico_api_url,
     printer_is_busy,
     should_press_pause_button,
 )
@@ -26,6 +27,46 @@ class ObicoUrlTests(unittest.TestCase):
 
     def test_blank_hostname_uses_localhost(self):
         self.assertEqual(build_api_url(""), "http://localhost:3333/detect/")
+
+    @patch("obico.requests.get")
+    def test_discovers_installed_obico_hostname(self, get):
+        addons_response = Mock()
+        addons_response.json.return_value = {
+            "data": {"addons": [{"slug": "0d2ff00d_obico_ml", "name": "Obico ML"}]}
+        }
+        info_response = Mock()
+        info_response.json.return_value = {
+            "data": {"hostname": "0d2ff00d-obico-ml"}
+        }
+        get.side_effect = [addons_response, info_response]
+
+        result = discover_obico_api_url("supervisor-token", "localhost")
+
+        self.assertEqual(result, "http://0d2ff00d-obico-ml:3333/detect/")
+        self.assertEqual(get.call_count, 2)
+        self.assertEqual(
+            get.call_args_list[0].kwargs["headers"],
+            {"Authorization": "Bearer supervisor-token"},
+        )
+
+    @patch("obico.requests.get")
+    def test_uses_fallback_when_obico_is_not_installed(self, get):
+        response = Mock()
+        response.json.return_value = {"data": {"addons": []}}
+        get.return_value = response
+
+        self.assertEqual(
+            discover_obico_api_url("supervisor-token", "my-obico"),
+            "http://my-obico:3333/detect/",
+        )
+
+    @patch("obico.requests.get")
+    def test_uses_fallback_when_supervisor_token_is_unavailable(self, get):
+        self.assertEqual(
+            discover_obico_api_url("", "my-obico"),
+            "http://my-obico:3333/detect/",
+        )
+        get.assert_not_called()
 
 
 class DetectImageTests(unittest.TestCase):
