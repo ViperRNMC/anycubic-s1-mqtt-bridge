@@ -44,9 +44,10 @@ class ObicoUrlTests(unittest.TestCase):
         }
         get.side_effect = [addons_response, info_response]
 
-        result = discover_obico_api_url("supervisor-token", "localhost")
+        result, message = discover_obico_api_url("supervisor-token", "localhost")
 
         self.assertEqual(result, "http://0d2ff00d-obico-ml:3333/detect/")
+        self.assertIn("hostname '0d2ff00d-obico-ml'", message)
         self.assertEqual(get.call_count, 2)
         self.assertEqual(
             get.call_args_list[0].kwargs["headers"],
@@ -59,18 +60,37 @@ class ObicoUrlTests(unittest.TestCase):
         response.json.return_value = {"data": {"addons": []}}
         get.return_value = response
 
+        result, message = discover_obico_api_url("supervisor-token", "my-obico")
+
         self.assertEqual(
-            discover_obico_api_url("supervisor-token", "my-obico"),
+            result,
             "http://my-obico:3333/detect/",
         )
+        self.assertIn("not found", message)
 
     @patch("obico.requests.get")
     def test_uses_fallback_when_supervisor_token_is_unavailable(self, get):
+        result, message = discover_obico_api_url("", "my-obico")
+
         self.assertEqual(
-            discover_obico_api_url("", "my-obico"),
+            result,
             "http://my-obico:3333/detect/",
         )
+        self.assertIn("SUPERVISOR_TOKEN is unavailable", message)
         get.assert_not_called()
+
+    @patch("obico.requests.get")
+    def test_reports_supervisor_permission_error_and_uses_fallback(self, get):
+        response = Mock()
+        response.raise_for_status.side_effect = requests.HTTPError(
+            response=Mock(status_code=403)
+        )
+        get.return_value = response
+
+        result, message = discover_obico_api_url("supervisor-token", "my-obico")
+
+        self.assertEqual(result, "http://my-obico:3333/detect/")
+        self.assertIn("HTTP 403", message)
 
 
 class DetectImageTests(unittest.TestCase):

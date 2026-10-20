@@ -38,7 +38,7 @@ def build_api_url(api_host):
 def discover_obico_api_url(supervisor_token, fallback_host, timeout=3):
     fallback_url = build_api_url(fallback_host)
     if not supervisor_token:
-        return fallback_url
+        return fallback_url, "SUPERVISOR_TOKEN is unavailable; using fallback hostname"
 
     headers = {"Authorization": f"Bearer {supervisor_token}"}
     try:
@@ -57,11 +57,14 @@ def discover_obico_api_url(supervisor_token, fallback_host, timeout=3):
             None,
         )
         if obico_addon is None:
-            return fallback_url
+            return (
+                fallback_url,
+                f"Obico ML add-on not found among {len(addons)} installed add-ons; using fallback hostname",
+            )
 
         slug = obico_addon.get("slug")
         if not slug:
-            return fallback_url
+            return fallback_url, "Obico ML add-on has no slug; using fallback hostname"
 
         info_response = requests.get(
             f"{SUPERVISOR_API_URL}/addons/{slug}/info",
@@ -70,9 +73,19 @@ def discover_obico_api_url(supervisor_token, fallback_host, timeout=3):
         )
         info_response.raise_for_status()
         hostname = info_response.json().get("data", {}).get("hostname")
-        return build_api_url(hostname) if hostname else fallback_url
-    except (requests.RequestException, ValueError, TypeError, AttributeError):
-        return fallback_url
+        if not hostname:
+            return fallback_url, f"Obico ML add-on '{slug}' has no hostname; using fallback hostname"
+        return (
+            build_api_url(hostname),
+            f"found Obico ML add-on '{slug}' with hostname '{hostname}'",
+        )
+    except requests.HTTPError as err:
+        status_code = err.response.status_code if err.response is not None else "unknown"
+        return fallback_url, f"Supervisor API returned HTTP {status_code}; using fallback hostname"
+    except requests.RequestException as err:
+        return fallback_url, f"Supervisor API request failed ({type(err).__name__}); using fallback hostname"
+    except (ValueError, TypeError, AttributeError):
+        return fallback_url, "Supervisor API returned invalid add-on data; using fallback hostname"
 
 
 def printer_is_busy(printer_state):

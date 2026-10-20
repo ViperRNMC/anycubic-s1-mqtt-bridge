@@ -866,6 +866,7 @@ class AnycubicMqttBridge:
         next_health_check = 0
         api_available = False
         previous_health_state = None
+        previous_discovery_result = None
         api_url = OBICO_API_URL
 
         while running:
@@ -874,9 +875,16 @@ class AnycubicMqttBridge:
                 self.obico_pause_latched = False
 
             if current_time >= next_health_check:
-                discovered_api_url = discover_obico_api_url(
+                if previous_discovery_result is None:
+                    logger.info(
+                        "Searching Home Assistant Supervisor for the installed Obico ML add-on"
+                    )
+                discovered_api_url, discovery_result = discover_obico_api_url(
                     SUPERVISOR_TOKEN, OBICO_API_URL
                 )
+                if discovery_result != previous_discovery_result:
+                    logger.info("Supervisor Obico lookup: %s", discovery_result)
+                    previous_discovery_result = discovery_result
                 if discovered_api_url != api_url:
                     api_url = discovered_api_url
                     logger.info("Using Obico ML API at %s", api_url)
