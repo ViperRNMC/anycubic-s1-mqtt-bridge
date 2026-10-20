@@ -35,3 +35,6 @@ configuration:
   obico_threshold:
     name: Detectiedrempel
     description: Waarde tussen 0 en 1; standaard 0.2.
+  obico_image_rotation:
+    name: Obico-afbeeldingsrotatie
+    description: Draai de printersnapshot vóór verzending naar Obico. Kies 0, 90, 180 of 270 graden; standaard 0.

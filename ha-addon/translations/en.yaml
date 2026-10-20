@@ -35,3 +35,6 @@ configuration:
   obico_threshold:
     name: Detection threshold
     description: Value from 0 to 1; default 0.2.
+  obico_image_rotation:
+    name: Obico image rotation
+    description: Rotate the printer snapshot before sending it to Obico. Use 0, 90, 180, or 270 degrees; default 0.

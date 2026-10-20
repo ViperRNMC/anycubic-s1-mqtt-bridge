@@ -21,6 +21,7 @@ from obico import (
     discover_obico_api_url,
     merge_print_data,
     printer_is_busy,
+    rotate_image,
     resolve_print_job_state,
     resolve_printer_state,
     should_press_pause_button,
@@ -70,6 +71,7 @@ OBICO_API_URL = build_api_url(
 SUPERVISOR_TOKEN = get_required_env("SUPERVISOR_TOKEN", "")
 OBICO_DETECTION_INTERVAL = int(get_required_env("OBICO_DETECTION_INTERVAL", "30"))
 OBICO_THRESHOLD = float(get_required_env("OBICO_THRESHOLD", "0.2"))
+OBICO_IMAGE_ROTATION = int(get_required_env("OBICO_IMAGE_ROTATION", "0"))
 
 if OBICO_ENABLED and not OBICO_API_URL:
     raise ValueError("OBICO_API_URL is required when Obico ML is enabled")
@@ -77,6 +79,8 @@ if OBICO_DETECTION_INTERVAL < 1:
     raise ValueError("OBICO_DETECTION_INTERVAL must be at least 1 second")
 if not 0 <= OBICO_THRESHOLD <= 1:
     raise ValueError("OBICO_THRESHOLD must be between 0 and 1")
+if OBICO_IMAGE_ROTATION not in {0, 90, 180, 270}:
+    raise ValueError("OBICO_IMAGE_ROTATION must be 0, 90, 180, or 270")
 
 # MQTT Configuration
 KEEPALIVE_INTERVAL = int(get_required_env("KEEPALIVE_INTERVAL", "60"))
@@ -923,10 +927,12 @@ class AnycubicMqttBridge:
                 if not image_data:
                     logger.warning("Obico ML skipped: printer snapshot unavailable")
                 else:
+                    image_data = rotate_image(image_data, OBICO_IMAGE_ROTATION)
                     logger.info(
-                        "Obico ML sending snapshot: bytes=%d jpeg=%s threshold=%.2f",
+                        "Obico ML sending snapshot: bytes=%d jpeg=%s rotation=%d threshold=%.2f",
                         len(image_data),
                         image_data.startswith(b"\xff\xd8"),
+                        OBICO_IMAGE_ROTATION,
                         OBICO_THRESHOLD,
                     )
                     result, api_url, used_fallback = detect_image_with_fallback(

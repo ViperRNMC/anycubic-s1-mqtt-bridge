@@ -15,6 +15,7 @@ obico_enabled="$(jq -r '.obico_enabled // false' "$json_file")"
 obico_api_url="$(jq -r '.obico_api_url // ""' "$json_file")"
 obico_interval="$(jq -r '.obico_detection_interval // 30' "$json_file")"
 obico_threshold="$(jq -r '.obico_threshold // 0.2' "$json_file")"
+obico_rotation="$(jq -r '.obico_image_rotation // "0"' "$json_file")"
 
 export ANYCUBIC_S1_IP="$anycubic_ip"
 
@@ -31,6 +32,7 @@ export OBICO_ENABLED="$obico_enabled"
 export OBICO_API_URL="$obico_api_url"
 export OBICO_DETECTION_INTERVAL="$obico_interval"
 export OBICO_THRESHOLD="$obico_threshold"
+export OBICO_IMAGE_ROTATION="$obico_rotation"
 
 cd /anycubic
 exec python3 asm.py
