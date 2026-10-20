@@ -59,6 +59,27 @@ printer camera is available, the add-on creates an Obico communication switch,
 failure binary sensor, confidence sensor, and detection image in Home Assistant.
 The switch pauses detection without changing the add-on configuration.
 
+To pause the printer automatically when Obico detects a failure, create this
+Home Assistant automation. Change the binary sensor entity ID if Home
+Assistant assigned it a different name:
+
+```yaml
+alias: Pause printer on Obico failure
+triggers:
+   - trigger: state
+      entity_id: binary_sensor.obico_ml_failure_detected
+      to: "on"
+conditions:
+   - condition: state
+      entity_id: sensor.anycubic_kobra_s1_printer_state
+      state: "busy"
+actions:
+   - action: button.press
+      target:
+         entity_id: button.anycubic_printer_pause_print
+mode: single
+```
+
 ## Docker Setup
 
 To run the application using Docker, you can use the provided `Dockerfile` and `docker-compose.yml`.

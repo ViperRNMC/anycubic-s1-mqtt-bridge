@@ -3,6 +3,10 @@ import base64
 import requests
 
 
+def printer_is_busy(printer_state):
+    return isinstance(printer_state, str) and printer_state.strip().lower() == "busy"
+
+
 def detect_image(image_data, api_url, threshold, timeout=30):
     if not api_url:
         raise ValueError("Obico API URL is required")

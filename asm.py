@@ -11,7 +11,7 @@ import requests
 from threading import Thread, Event
 import traceback
 import random
-from obico import detect_image
+from obico import detect_image, printer_is_busy
 
 # Load configuration from .env file if present
 load_dotenv()
@@ -850,6 +850,7 @@ class AnycubicMqttBridge:
             if (
                 not self.obico_active.is_set()
                 or not self.snapshot_enabled.is_set()
+                or not printer_is_busy(self.printer_state)
                 or time.monotonic() < next_detection
             ):
                 time.sleep(1)

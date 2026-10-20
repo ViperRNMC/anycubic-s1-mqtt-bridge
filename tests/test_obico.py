@@ -2,7 +2,7 @@ import base64
 import unittest
 from unittest.mock import Mock, patch
 
-from obico import detect_image
+from obico import detect_image, printer_is_busy
 
 
 class DetectImageTests(unittest.TestCase):
@@ -52,6 +52,13 @@ class DetectImageTests(unittest.TestCase):
     def test_rejects_threshold_outside_api_range(self):
         with self.assertRaises(ValueError):
             detect_image(b"snapshot", "http://obico/detect/", 1.1)
+
+
+class PrinterStateTests(unittest.TestCase):
+    def test_only_busy_state_allows_obico_detection(self):
+        self.assertTrue(printer_is_busy("busy"))
+        self.assertFalse(printer_is_busy("free"))
+        self.assertFalse(printer_is_busy("unknown"))
 
 
 if __name__ == "__main__":
