@@ -230,3 +230,13 @@ def detect_image(image_data, api_url, threshold, timeout=30):
         "avg_confidence": average_confidence,
         "image_with_errors": image_with_errors,
     }
+
+
+def detect_image_with_fallback(image_data, api_url, fallback_api_url, threshold):
+    try:
+        return detect_image(image_data, api_url, threshold), api_url, False
+    except requests.ConnectionError:
+        if fallback_api_url == api_url:
+            raise
+        result = detect_image(image_data, fallback_api_url, threshold)
+        return result, fallback_api_url, True

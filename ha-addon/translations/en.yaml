@@ -28,7 +28,7 @@ configuration:
     description: Run detection while printing and press the existing Pause Print button when a failure is detected.
   obico_api_url:
     name: Obico ML hostname (fallback)
-    description: Used only if Supervisor cannot find the Obico ML add-on. Enter only the hostname, not the protocol, port, or API path.
+    description: Used if the Supervisor lookup or discovered hostname is unreachable. Enter a reachable hostname or IP address only; do not include the protocol, port, or API path.
   obico_detection_interval:
     name: Detection interval
     description: Seconds between detections while the printer is busy.

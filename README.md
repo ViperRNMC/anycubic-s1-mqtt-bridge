@@ -57,10 +57,11 @@ Install and start the Obico ML API add-on from
 `obico-ml-api` folder). In this bridge add-on's configuration, enable
 **Obico ML**. The bridge searches installed add-ons through the Supervisor API
 for **Obico ML** and reads its internal hostname automatically. It then adds
-`http://`, port `3333`, and `/detect/`. The hostname setting is only a fallback
-if Supervisor cannot find the add-on. This requires the add-on's `manager`
-Supervisor role. The bridge also checks `/hc/` every 30 seconds and reports
-Obico entities unavailable when the API cannot be reached.
+`http://`, port `3333`, and `/detect/`. The hostname setting is a fallback if
+Supervisor cannot find the add-on or its internal hostname cannot be reached.
+This requires the add-on's `manager` Supervisor role. The bridge also checks
+`/hc/` every 30 seconds and reports Obico entities unavailable when the API
+cannot be reached.
 
 Set the detection interval and threshold as needed. The threshold is between
 `0` and `1` (default `0.2`). The bridge registers a communication switch,

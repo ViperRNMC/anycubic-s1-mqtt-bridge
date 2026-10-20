@@ -28,7 +28,7 @@ configuration:
     description: Detectie uitvoeren tijdens het printen; bij een fout wordt de bestaande Pauzeer-afdrukknop gebruikt.
   obico_api_url:
     name: Obico ML-hostnaam (fallback)
-    description: Alleen gebruikt als Supervisor de Obico ML-add-on niet kan vinden. Vul alleen de hostname in, niet het protocol, de poort of het API-pad.
+    description: Gebruikt als Supervisor de add-on niet vindt of de gevonden hostname onbereikbaar is. Vul alleen een bereikbare hostname of IP in, zonder protocol, poort of API-pad.
   obico_detection_interval:
     name: Detectie-interval
     description: Aantal seconden tussen detecties zolang de printer bezig is.

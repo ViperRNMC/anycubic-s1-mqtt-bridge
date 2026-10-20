@@ -17,7 +17,7 @@ from obico import (
     build_print_job_state,
     build_api_url,
     check_api_health,
-    detect_image,
+    detect_image_with_fallback,
     discover_obico_api_url,
     merge_print_data,
     printer_is_busy,
@@ -868,6 +868,7 @@ class AnycubicMqttBridge:
         previous_health_state = None
         previous_discovery_result = None
         api_url = OBICO_API_URL
+        prefer_fallback_api = False
 
         while running:
             current_time = time.monotonic()
@@ -885,6 +886,8 @@ class AnycubicMqttBridge:
                 if discovery_result != previous_discovery_result:
                     logger.info("Supervisor Obico lookup: %s", discovery_result)
                     previous_discovery_result = discovery_result
+                if prefer_fallback_api:
+                    discovered_api_url = OBICO_API_URL
                 if discovered_api_url != api_url:
                     api_url = discovered_api_url
                     logger.info("Using Obico ML API at %s", api_url)
@@ -926,11 +929,18 @@ class AnycubicMqttBridge:
                         image_data.startswith(b"\xff\xd8"),
                         OBICO_THRESHOLD,
                     )
-                    result = detect_image(
+                    result, api_url, used_fallback = detect_image_with_fallback(
                         image_data,
                         api_url,
+                        OBICO_API_URL,
                         OBICO_THRESHOLD,
                     )
+                    if used_fallback:
+                        prefer_fallback_api = True
+                        logger.warning(
+                            "Obico ML auto-discovered hostname failed to connect; switched to fallback API at %s",
+                            api_url,
+                        )
                     self.ha_client.publish(
                         state_topic,
                         json.dumps(

@@ -9,6 +9,7 @@ from obico import (
     build_print_job_state,
     check_api_health,
     detect_image,
+    detect_image_with_fallback,
     discover_obico_api_url,
     merge_print_data,
     printer_is_busy,
@@ -142,6 +143,24 @@ class DetectImageTests(unittest.TestCase):
     def test_rejects_threshold_outside_api_range(self):
         with self.assertRaises(ValueError):
             detect_image(b"snapshot", "http://obico/detect/", 1.1)
+
+    @patch("obico.requests.post")
+    def test_retries_connection_error_with_fallback_url(self, post):
+        response = Mock()
+        response.json.return_value = {"detections": []}
+        post.side_effect = [requests.ConnectionError("DNS failure"), response]
+
+        result, api_url, used_fallback = detect_image_with_fallback(
+            b"snapshot",
+            "http://obico-addon/detect/",
+            "http://10.0.0.150:3333/detect/",
+            0.2,
+        )
+
+        self.assertFalse(result["error_detected"])
+        self.assertEqual(api_url, "http://10.0.0.150:3333/detect/")
+        self.assertTrue(used_fallback)
+        self.assertEqual(post.call_count, 2)
 
 
 class PrinterStateTests(unittest.TestCase):

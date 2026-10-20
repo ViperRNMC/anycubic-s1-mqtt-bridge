@@ -58,7 +58,8 @@ API add-on from [mattjacobson6/ha-addons](https://github.com/mattjacobson6/ha-ad
 the Supervisor API, the bridge finds the installed **Obico ML** add-on and
 reads its internal hostname automatically. It builds the API URL using HTTP,
 port `3333`, and `/detect/`. The hostname field is only a fallback if
-Supervisor cannot find Obico ML. This requires the `manager` Supervisor role.
+Supervisor cannot find Obico ML or its internal hostname is unreachable. This
+requires the `manager` Supervisor role.
 The bridge also checks `/hc/` every 30 seconds and marks Obico entities
 unavailable when the backend cannot be reached.
 
