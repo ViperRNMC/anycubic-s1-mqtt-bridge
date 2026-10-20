@@ -13,7 +13,6 @@ from obico import (
     discover_obico_api_url,
     merge_print_data,
     printer_is_busy,
-    rotate_image,
     resolve_print_job_state,
     resolve_printer_state,
     should_press_pause_button,
@@ -93,28 +92,6 @@ class ObicoUrlTests(unittest.TestCase):
 
         self.assertEqual(result, "http://my-obico:3333/detect/")
         self.assertIn("HTTP 403", message)
-
-
-class ImageRotationTests(unittest.TestCase):
-    def test_zero_degrees_keeps_original_image_without_ffmpeg(self):
-        image_data = b"jpeg-data"
-        with patch("obico.subprocess.run") as run:
-            self.assertEqual(rotate_image(image_data, 0), image_data)
-        run.assert_not_called()
-
-    @patch("obico.subprocess.run")
-    def test_ninety_degrees_rotates_image_clockwise(self, run):
-        run.return_value = Mock(returncode=0, stdout=b"rotated-jpeg")
-
-        result = rotate_image(b"jpeg-data", 90)
-
-        self.assertEqual(result, b"rotated-jpeg")
-        command = run.call_args.args[0]
-        self.assertEqual(command[command.index("-vf") + 1], "transpose=clock")
-
-    def test_rejects_unsupported_rotation(self):
-        with self.assertRaises(ValueError):
-            rotate_image(b"jpeg-data", 45)
 
 
 class DetectImageTests(unittest.TestCase):

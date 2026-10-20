@@ -1,5 +1,4 @@
 import base64
-import subprocess
 from urllib.parse import urlsplit, urlunsplit
 
 import requests
@@ -8,51 +7,6 @@ import requests
 DEFAULT_OBICO_API_URL = "http://localhost:3333/detect/"
 DEFAULT_OBICO_API_HOST = "localhost"
 SUPERVISOR_API_URL = "http://supervisor"
-ROTATION_FILTERS = {
-    90: "transpose=clock",
-    180: "hflip,vflip",
-    270: "transpose=cclock",
-}
-
-
-def rotate_image(image_data, rotation):
-    rotation = int(rotation) % 360
-    if rotation == 0:
-        return image_data
-    if rotation not in ROTATION_FILTERS:
-        raise ValueError("Image rotation must be 0, 90, 180, or 270 degrees")
-
-    result = subprocess.run(
-        [
-            "ffmpeg",
-            "-hide_banner",
-            "-loglevel",
-            "error",
-            "-f",
-            "image2pipe",
-            "-i",
-            "pipe:0",
-            "-vf",
-            ROTATION_FILTERS[rotation],
-            "-frames:v",
-            "1",
-            "-f",
-            "image2pipe",
-            "-vcodec",
-            "mjpeg",
-            "pipe:1",
-        ],
-        input=image_data,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        timeout=10,
-        check=False,
-    )
-    if result.returncode != 0 or not result.stdout:
-        raise RuntimeError("Could not rotate Obico snapshot with ffmpeg")
-    return result.stdout
-
-
 def build_api_url(api_host):
     value = (api_host or "").strip()
     if not value:

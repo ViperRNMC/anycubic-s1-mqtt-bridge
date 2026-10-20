@@ -64,8 +64,7 @@ The bridge also checks `/hc/` every 30 seconds and marks Obico entities
 unavailable when the backend cannot be reached.
 
 Set the detection interval and threshold as needed. The threshold is between
-`0` and `1` (default `0.2`). Image rotation can be set to `0`, `90`, `180`, or
-`270` degrees before upload. When the printer camera is available, the bridge
+`0` and `1` (default `0.2`). When the printer camera is available, the bridge
 creates an Obico communication switch, failure binary sensor, confidence
 sensor, and detection image in Home Assistant. Detection only runs while the
 printer state is `busy`. When Obico detects a failure during `busy`, the bridge
