@@ -17,6 +17,57 @@ def print_speed_mode_name(value):
     return PRINT_SPEED_MODE_NAMES.get(mode, f"Unknown ({mode})")
 
 
+def classify_mqtt_error(message):
+    message_type = str(message.get("type") or "").strip().lower()
+    data = message.get("data")
+    data = data if isinstance(data, dict) else {}
+    project = data.get("project")
+    project = project if isinstance(project, dict) else {}
+    raw_state = message.get("state")
+    if raw_state is None:
+        raw_state = data.get("state", project.get("state"))
+    state = str(raw_state or "").strip().lower()
+    code = message.get("code", data.get("code"))
+    text = str(
+        message.get("msg")
+        or message.get("message")
+        or message.get("error")
+        or data.get("msg")
+        or data.get("message")
+        or ""
+    ).strip()
+    normalized_text = text.lower()
+    successful_message = (
+        normalized_text in {"", "done", "success", "ok"}
+        or normalized_text.endswith("/done")
+    )
+    job_failed = any(token in state for token in ("fail", "error", "abort", "cancel"))
+
+    try:
+        code_problem = code is not None and int(code) != 200
+    except (TypeError, ValueError):
+        code_problem = code is not None
+
+    error_message = any(
+        token in normalized_text
+        for token in ("error", "fail", "abort", "cancel", "exception")
+    )
+    message_problem = message_type == "error" or (
+        bool(text)
+        and not successful_message
+        and (message_type == "print" or error_message)
+    )
+    print_problem = job_failed or code_problem or message_problem
+
+    return {
+        "job_failed": job_failed,
+        "print_problem": print_problem,
+        "state": state,
+        "code": code,
+        "message": text,
+    }
+
+
 def get_color_box_id(box_data, fallback_index):
     try:
         return int(box_data.get("id", fallback_index))

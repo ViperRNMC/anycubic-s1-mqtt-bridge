@@ -4,6 +4,7 @@ from unittest.mock import Mock, patch
 import requests
 
 from bridge_helpers import (
+    classify_mqtt_error,
     discover_mqtt_settings,
     global_filament_index,
     get_color_box_id,
@@ -20,6 +21,61 @@ class PrintSpeedModeTests(unittest.TestCase):
 
     def test_unknown_mode_stays_explicit(self):
         self.assertEqual(print_speed_mode_name(7), "Unknown (7)")
+
+
+class MqttErrorTests(unittest.TestCase):
+    def test_normal_done_ack_is_not_an_error(self):
+        result = classify_mqtt_error(
+            {"type": "print", "state": "done", "code": 200, "msg": "getSliceParam/done"}
+        )
+
+        self.assertFalse(result["job_failed"])
+        self.assertFalse(result["print_problem"])
+
+    def test_failed_state_marks_both_error_entities(self):
+        result = classify_mqtt_error(
+            {"type": "print", "state": "failed", "code": 200, "msg": "print failed"}
+        )
+
+        self.assertTrue(result["job_failed"])
+        self.assertTrue(result["print_problem"])
+
+    def test_non_success_code_marks_print_problem_and_preserves_message(self):
+        result = classify_mqtt_error(
+            {"type": "print", "state": "done", "code": 11808, "msg": "bed error"}
+        )
+
+        self.assertFalse(result["job_failed"])
+        self.assertTrue(result["print_problem"])
+        self.assertEqual(result["code"], 11808)
+        self.assertEqual(result["message"], "bed error")
+
+    def test_error_type_without_code_is_reported(self):
+        result = classify_mqtt_error(
+            {"type": "error", "action": "setHotbedTemp", "message": "Target rejected"}
+        )
+
+        self.assertTrue(result["print_problem"])
+        self.assertEqual(result["message"], "Target rejected")
+
+    def test_failed_job_in_nested_info_project_is_detected(self):
+        result = classify_mqtt_error(
+            {"type": "info", "data": {"project": {"state": "cancelled"}}}
+        )
+
+        self.assertTrue(result["job_failed"])
+        self.assertTrue(result["print_problem"])
+
+    def test_non_success_print_message_is_reported_but_done_suffix_is_not(self):
+        problem = classify_mqtt_error(
+            {"type": "print", "code": 200, "msg": "temperature target rejected"}
+        )
+        acknowledgement = classify_mqtt_error(
+            {"type": "print", "code": 200, "msg": "getSliceParam/done"}
+        )
+
+        self.assertTrue(problem["print_problem"])
+        self.assertFalse(acknowledgement["print_problem"])
 
 
 class ColorBoxIdTests(unittest.TestCase):

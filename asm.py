@@ -9,6 +9,7 @@ import ssl  # Add this import at the top of your file
 from dotenv import load_dotenv
 import requests
 from bridge_helpers import (
+    classify_mqtt_error,
     discover_mqtt_settings,
     get_color_box_id,
     global_filament_index,
@@ -193,13 +194,16 @@ class AnycubicMqttBridge:
     def get_device_info(self):
         """Return consistent device info dictionary for Home Assistant entities"""
         device_id = self.printer_cn if self.printer_cn else "anycubic_printer"
-        return {
+        device_info = {
             "identifiers": [device_id],
             "name": getattr(self, "device_name", "Anycubic Printer"),
             "model": getattr(self, "device_model", "Unknown"),
             "manufacturer": "Anycubic",
             "sw_version": getattr(self, "printer_version", "Unknown"),
         }
+        if self.printer_cn:
+            device_info["serial_number"] = self.printer_cn
+        return device_info
 
     def get_color_box_device_info(self, box_index):
         printer_device_id = self.get_device_info()["identifiers"][0]
@@ -759,6 +763,28 @@ class AnycubicMqttBridge:
 
     def cleanup_legacy_color_box_entities(self):
         topic_prefix = self.get_topic_prefix()
+        for unique_id in (
+            f"{topic_prefix}_serial_number",
+            f"{topic_prefix}_target_nozzle_temp",
+            f"{topic_prefix}_target_hotbed_temp",
+        ):
+            self.ha_client.publish(
+                f"homeassistant/sensor/{unique_id}/config",
+                "",
+                retain=True,
+            )
+
+        for unique_id in (
+            f"{topic_prefix}_color_box_status",
+            f"{topic_prefix}_color_box_temp",
+            f"{topic_prefix}_active_filament_slot",
+        ):
+            self.ha_client.publish(
+                f"homeassistant/sensor/{unique_id}/config",
+                "",
+                retain=True,
+            )
+
         for slot_index in range(8):
             for entity_type in ("type", "color"):
                 self.ha_client.publish(
@@ -1588,6 +1614,11 @@ class AnycubicMqttBridge:
             try:
                 data = json.loads(payload)
 
+                message_type = str(data.get("type") or "").strip().lower()
+                error_report = classify_mqtt_error(data)
+                if message_type in {"print", "error"} or error_report["print_problem"]:
+                    self._publish_mqtt_error_state(data, error_report)
+
                 # Check for registered message handlers
                 if hasattr(self, "message_handlers"):
                     for handler in self.message_handlers:
@@ -1668,6 +1699,7 @@ class AnycubicMqttBridge:
                 if "type" in data and data["type"] == "info":
                     printer_data = data["data"]
                     logger.debug(f"Received printer info: {json.dumps(printer_data)}")
+                    topic_prefix = self.get_topic_prefix()
                     self.device_name = printer_data.get(
                         "printerName", "Anycubic Printer"
                     )
@@ -1686,21 +1718,6 @@ class AnycubicMqttBridge:
 
                     # Create individual sensors
                     sensors = []
-
-                    # Add Serial Number (CN) sensor
-                    if self.printer_cn:
-                        # Use prefix for consistency
-                        topic_prefix = self.get_topic_prefix()
-                        sensors.append(
-                            {
-                                "name": "Printer Serial Number",
-                                "unique_id": f"{topic_prefix}_serial_number",
-                                "state_topic": f"homeassistant/sensor/{topic_prefix}/state",
-                                "value_template": "{{ value_json.printer_cn }}",
-                                "icon": "mdi:barcode",
-                                "device": device_info,
-                            }
-                        )
 
                     # State sensor
                     if "state" in printer_data:
@@ -1731,20 +1748,6 @@ class AnycubicMqttBridge:
                             }
                         )
 
-                        # Target hotbed temperature
-                        sensors.append(
-                            {
-                                "name": "Target Hotbed Temperature",
-                                "unique_id": f"{topic_prefix}_target_hotbed_temp",
-                                "state_topic": f"homeassistant/sensor/{topic_prefix}/temperature",
-                                "value_template": "{{ value_json.target_hotbed_temp }}",
-                                "unit_of_measurement": "°C",
-                                "device_class": "temperature",
-                                "icon": "mdi:thermometer-chevron-up",
-                                "device": device_info,
-                            }
-                        )
-
                         # Current nozzle temperature
                         sensors.append(
                             {
@@ -1755,20 +1758,6 @@ class AnycubicMqttBridge:
                                 "unit_of_measurement": "°C",
                                 "device_class": "temperature",
                                 "icon": "mdi:printer-3d-nozzle-heat",
-                                "device": device_info,
-                            }
-                        )
-
-                        # Target nozzle temperature
-                        sensors.append(
-                            {
-                                "name": "Target Nozzle Temperature",
-                                "unique_id": f"{topic_prefix}_target_nozzle_temp",
-                                "state_topic": f"homeassistant/sensor/{topic_prefix}/temperature",
-                                "value_template": "{{ value_json.target_nozzle_temp }}",
-                                "unit_of_measurement": "°C",
-                                "device_class": "temperature",
-                                "icon": "mdi:thermometer-chevron-up",
                                 "device": device_info,
                             }
                         )
@@ -1834,6 +1823,7 @@ class AnycubicMqttBridge:
                                 "state_topic": f"homeassistant/sensor/{topic_prefix}/state",
                                 "value_template": "{{ value_json.ip_address }}",
                                 "icon": "mdi:ip-network",
+                                "entity_category": "diagnostic",
                                 "device": device_info,
                             }
                         )
@@ -2463,42 +2453,6 @@ class AnycubicMqttBridge:
             for sensor in sensors:
                 discovery_topic = f"homeassistant/sensor/{sensor['unique_id']}/config"
                 self.ha_client.publish(discovery_topic, json.dumps(sensor), retain=True)
-            
-            # For backward compatibility, also create sensors without box index for the first box
-            if box_index == 0:
-                backward_compat_sensors = [
-                    {
-                        "name": "MultiColor Box Status",
-                        "unique_id": f"{topic_prefix}_color_box_status",
-                        "state_topic": f"homeassistant/sensor/{topic_prefix}/color_box",
-                        "value_template": "{{ 'Connected' if value_json.status == 1 else 'Disconnected' }}",
-                        "icon": "mdi:printer-3d-nozzle",
-                        "device": device_info,
-                    },
-                    {
-                        "name": "MultiColor Box Temperature",
-                        "unique_id": f"{topic_prefix}_color_box_temp",
-                        "state_topic": f"homeassistant/sensor/{topic_prefix}/color_box",
-                        "value_template": "{{ value_json.temperature }}",
-                        "unit_of_measurement": "°C",
-                        "device_class": "temperature",
-                        "icon": "mdi:thermometer",
-                        "device": device_info,
-                    },
-                    {
-                        "name": "Active Filament Slot",
-                        "unique_id": f"{topic_prefix}_active_filament_slot",
-                        "state_topic": f"homeassistant/sensor/{topic_prefix}/color_box",
-                        "value_template": "{{ value_json.loaded_slot if value_json.loaded_slot >= 0 else 'None' }}",
-                        "icon": "mdi:numeric",
-                        "device": device_info,
-                    },
-                ]
-                
-                # Publish backward compatibility sensors
-                for sensor in backward_compat_sensors:
-                    discovery_topic = f"homeassistant/sensor/{sensor['unique_id']}/config"
-                    self.ha_client.publish(discovery_topic, json.dumps(sensor), retain=True)
         
         logger.info("Created ACE Pro sensors for box IDs: %s", sorted(set(box_ids)))
 
@@ -2562,6 +2516,73 @@ class AnycubicMqttBridge:
         
         logger.info("Created print control buttons in Home Assistant")
         self._create_temperature_fan_controls()
+        self._create_print_error_sensors()
+
+    def _create_print_error_sensors(self):
+        if getattr(self, "print_error_sensors_created", False):
+            return
+
+        topic_prefix = self.get_topic_prefix()
+        state_topic = f"homeassistant/sensor/{topic_prefix}/print_error"
+        device_info = self.get_device_info()
+        sensors = (
+            {
+                "name": "Job Failed",
+                "unique_id": f"{topic_prefix}_job_failed",
+                "value_template": "{{ 'ON' if value_json.job_failed else 'OFF' }}",
+                "payload_on": "ON",
+                "payload_off": "OFF",
+                "device_class": "problem",
+                "json_attributes_topic": state_topic,
+                "state_topic": state_topic,
+                "icon": "mdi:printer-3d-alert",
+                "device": device_info,
+            },
+            {
+                "name": "Print Problem",
+                "unique_id": f"{topic_prefix}_print_problem",
+                "value_template": "{{ 'ON' if value_json.print_problem else 'OFF' }}",
+                "payload_on": "ON",
+                "payload_off": "OFF",
+                "device_class": "problem",
+                "json_attributes_topic": state_topic,
+                "state_topic": state_topic,
+                "icon": "mdi:alert-circle-outline",
+                "device": device_info,
+            },
+        )
+        for sensor in sensors:
+            self.ha_client.publish(
+                f"homeassistant/binary_sensor/{sensor['unique_id']}/config",
+                json.dumps(sensor),
+                retain=True,
+            )
+        self.print_error_sensors_created = True
+
+    def _publish_mqtt_error_state(self, message, error_state=None):
+        self._create_print_error_sensors()
+        error_state = dict(error_state or classify_mqtt_error(message))
+        error_state.update(
+            {
+                "type": message.get("type"),
+                "action": message.get("action"),
+                "last_updated": time.strftime("%Y-%m-%d %H:%M:%S"),
+            }
+        )
+        self.ha_client.publish(
+            f"homeassistant/sensor/{self.get_topic_prefix()}/print_error",
+            json.dumps(error_state),
+            retain=True,
+        )
+        if error_state["print_problem"]:
+            logger.warning(
+                "Printer MQTT problem: type=%s action=%s state=%s code=%s message=%s",
+                error_state["type"],
+                error_state["action"],
+                error_state["state"],
+                error_state["code"],
+                error_state["message"],
+            )
 
     def _create_temperature_fan_controls(self):
         if getattr(self, "temperature_fan_controls_created", False):

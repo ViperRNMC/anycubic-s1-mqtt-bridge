@@ -58,9 +58,16 @@ The Print Speed Mode sensor maps Anycubic values to `Silent`, `Standard`, or
 Each detected ACE Pro box and its filament sensors are grouped under a separate
 Home Assistant child device linked to the printer.
 
+The printer serial number is shown in Home Assistant device information; its IP
+address remains available as a diagnostic entity.
+
 Target nozzle and hotbed temperatures are adjustable from Home Assistant, as
 are the main, auxiliary, and ACE box fans. Temperature controls use `0–320 °C`
 for the nozzle and `0–120 °C` for the bed; fan controls use `0–100%`.
+
+The bridge also exposes `Job Failed` and `Print Problem` binary sensors from
+Anycubic MQTT reports. Their attributes include the reported state, code,
+action, and error message; normal `done` acknowledgements remain clear.
 
 ### Obico ML (Home Assistant add-on)
 

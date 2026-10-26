@@ -60,6 +60,10 @@ box fan controls, and a Print Speed Mode select in Home Assistant. The speed
 select is available while a print is active; the fan controls range from 0 to
 100 percent.
 
+Anycubic MQTT reports also create `Job Failed` and `Print Problem` binary
+sensors. Their attributes include the reported state, code, action, MQTT type,
+and error message; normal `done` acknowledgements remain clear.
+
 ### Obico ML
 
 Obico ML is optional and disabled by default. Install and start the Obico ML
