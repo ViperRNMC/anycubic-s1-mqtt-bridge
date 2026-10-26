@@ -16,6 +16,7 @@ from bridge_helpers import (
     normalize_box_slot_index,
     PRINT_SPEED_MODE_NAMES,
     print_speed_mode_name,
+    update_mqtt_error_latch,
 )
 from threading import Thread, Event
 import traceback
@@ -136,6 +137,7 @@ class AnycubicMqttBridge:
         self.obico_thread = None
         self.obico_entities_created = False
         self.obico_threshold = OBICO_THRESHOLD
+        self.print_error_state = None
         self.obico_pause_latched = False
         self.obico_active = Event()
         if OBICO_ENABLED:
@@ -1652,7 +1654,7 @@ class AnycubicMqttBridge:
                 message_type = str(data.get("type") or "").strip().lower()
                 error_report = classify_mqtt_error(data)
                 if message_type in {"print", "error"} or error_report["print_problem"]:
-                    self._publish_mqtt_error_state(data, error_report)
+                    self._publish_mqtt_error_state(data)
 
                 # Check for registered message handlers
                 if hasattr(self, "message_handlers"):
@@ -2561,11 +2563,17 @@ class AnycubicMqttBridge:
 
     def _publish_mqtt_error_state(self, message, error_state=None):
         self._create_print_error_sensors()
-        error_state = dict(error_state or classify_mqtt_error(message))
+        previous_state = getattr(self, "print_error_state", None)
+        error_state = error_state or update_mqtt_error_latch(
+            previous_state, message
+        )
+        if error_state is previous_state:
+            return
+
+        error_state = dict(error_state)
+        self.print_error_state = error_state
         error_state.update(
             {
-                "type": message.get("type"),
-                "action": message.get("action"),
                 "last_updated": time.strftime("%Y-%m-%d %H:%M:%S"),
             }
         )

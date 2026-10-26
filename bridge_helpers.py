@@ -68,6 +68,31 @@ def classify_mqtt_error(message):
     }
 
 
+def update_mqtt_error_latch(previous_state, message):
+    error_state = classify_mqtt_error(message)
+    message_type = str(message.get("type") or "").strip().lower()
+    action = str(message.get("action") or "").strip().lower()
+
+    if error_state["print_problem"]:
+        return {
+            **error_state,
+            "type": message.get("type"),
+            "action": message.get("action"),
+            "latched": True,
+        }
+
+    if previous_state and previous_state.get("latched"):
+        if message_type != "print" or action not in {"finish", "complete"}:
+            return previous_state
+
+    return {
+        **error_state,
+        "type": message.get("type"),
+        "action": message.get("action"),
+        "latched": False,
+    }
+
+
 def get_color_box_id(box_data, fallback_index):
     try:
         return int(box_data.get("id", fallback_index))

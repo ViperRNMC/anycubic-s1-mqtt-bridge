@@ -10,6 +10,7 @@ from bridge_helpers import (
     get_color_box_id,
     normalize_box_slot_index,
     print_speed_mode_name,
+    update_mqtt_error_latch,
 )
 
 
@@ -76,6 +77,34 @@ class MqttErrorTests(unittest.TestCase):
 
         self.assertTrue(problem["print_problem"])
         self.assertFalse(acknowledgement["print_problem"])
+
+    def test_error_latch_survives_unrelated_done_acknowledgements(self):
+        error = update_mqtt_error_latch(
+            None,
+            {"type": "print", "action": "setHotbedTemp", "code": 11808, "msg": "bed error"},
+        )
+        acknowledgement = update_mqtt_error_latch(
+            error,
+            {"type": "print", "action": "getSliceParam", "state": "done", "code": 200, "msg": "getSliceParam/done"},
+        )
+
+        self.assertIs(acknowledgement, error)
+        self.assertTrue(acknowledgement["print_problem"])
+        self.assertEqual(acknowledgement["message"], "bed error")
+
+    def test_successful_print_completion_clears_error_latch(self):
+        error = update_mqtt_error_latch(
+            None,
+            {"type": "print", "state": "failed", "code": 11808, "msg": "print failed"},
+        )
+        completed = update_mqtt_error_latch(
+            error,
+            {"type": "print", "action": "finish", "state": "done", "code": 200, "msg": "done"},
+        )
+
+        self.assertFalse(completed["latched"])
+        self.assertFalse(completed["job_failed"])
+        self.assertFalse(completed["print_problem"])
 
 
 class ColorBoxIdTests(unittest.TestCase):
