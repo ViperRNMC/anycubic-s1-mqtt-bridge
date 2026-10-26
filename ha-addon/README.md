@@ -55,6 +55,11 @@ from the Supervisor MQTT service automatically. The `mqtt_broker`, `mqtt_port`,
 `mqtt_user`, and `mqtt_pass` settings are fallback values for standalone or
 non-Supervisor deployments.
 
+The bridge exposes adjustable nozzle and hotbed targets, main/auxiliary/ACE
+box fan controls, and a Print Speed Mode select in Home Assistant. The speed
+select is available while a print is active; the fan controls range from 0 to
+100 percent.
+
 ### Obico ML
 
 Obico ML is optional and disabled by default. Install and start the Obico ML

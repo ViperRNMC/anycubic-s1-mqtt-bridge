@@ -13,6 +13,7 @@ from bridge_helpers import (
     get_color_box_id,
     global_filament_index,
     normalize_box_slot_index,
+    PRINT_SPEED_MODE_NAMES,
     print_speed_mode_name,
 )
 from threading import Thread, Event
@@ -198,6 +199,17 @@ class AnycubicMqttBridge:
             "model": getattr(self, "device_model", "Unknown"),
             "manufacturer": "Anycubic",
             "sw_version": getattr(self, "printer_version", "Unknown"),
+        }
+
+    def get_color_box_device_info(self, box_index):
+        printer_device_id = self.get_device_info()["identifiers"][0]
+        box_number = int(box_index) + 1
+        return {
+            "identifiers": [f"{printer_device_id}_ace_box_{box_index}"],
+            "name": f"ACE Pro Box {box_number}",
+            "manufacturer": "Anycubic",
+            "model": "ACE Pro Filament System",
+            "via_device": printer_device_id,
         }
 
     def discover_printer_with_retry(self):
@@ -1796,7 +1808,7 @@ class AnycubicMqttBridge:
                                 "state_topic": f"homeassistant/sensor/{topic_prefix}/fan",
                                 "value_template": "{{ value_json.box_fan_level }}",
                                 "icon": "mdi:fan",
-                                "device": device_info,
+                                "device": self.get_color_box_device_info(0),
                             }
                         )
 
@@ -1901,13 +1913,21 @@ class AnycubicMqttBridge:
                     logger.debug(f"Updated printer state: {self.printer_state}")
 
                     # Also publish a separate fan update if fan data is available
-                    if "fan_speed_pct" in printer_data or "aux_fan_speed_pct" in printer_data:
+                    if any(
+                        key in printer_data
+                        for key in (
+                            "fan_speed_pct",
+                            "aux_fan_speed_pct",
+                            "box_fan_level",
+                        )
+                    ):
                         fan_state = {
                             "fan_speed_pct": printer_data.get("fan_speed_pct", 0),
                             "aux_fan_speed_pct": printer_data.get("aux_fan_speed_pct", 0),
                             "box_fan_level": printer_data.get("box_fan_level", 0) if "box_fan_level" in printer_data else 0,
                             "last_updated": time.strftime("%Y-%m-%d %H:%M:%S"),
                         }
+                        self.latest_fan_state = dict(fan_state)
                         
                         # Publish fan data to Home Assistant
                         self.ha_client.publish(
@@ -1927,6 +1947,7 @@ class AnycubicMqttBridge:
                             "target_nozzle_temp": printer_data.get("temp", {}).get("target_nozzle_temp", 0),
                             "last_updated": time.strftime("%Y-%m-%d %H:%M:%S"),
                         }
+                        self.latest_temperature_state = dict(temp_state)
                         
                         # Publish temperature data to Home Assistant
                         self.ha_client.publish(
@@ -1991,6 +2012,7 @@ class AnycubicMqttBridge:
                         "printer_cn": self.printer_cn if self.printer_cn else "",
                         "last_updated": time.strftime("%Y-%m-%d %H:%M:%S"),
                     }
+                    self.latest_printer_state = dict(state_data)
 
                     # Publish the state to the CN-specific topic
                     self.ha_client.publish(
@@ -2024,6 +2046,7 @@ class AnycubicMqttBridge:
                                 "target_nozzle_temp": temp_data.get("target_nozzle_temp", 0),
                                 "last_updated": time.strftime("%Y-%m-%d %H:%M:%S"),
                             }
+                            self.latest_temperature_state = dict(temp_state)
                             
                             # Publish temperature data to Home Assistant
                             self.ha_client.publish(
@@ -2228,6 +2251,7 @@ class AnycubicMqttBridge:
                                 "box_fan_level": fan_data.get("box_fan_level", 0),
                                 "last_updated": time.strftime("%Y-%m-%d %H:%M:%S"),
                             }
+                            self.latest_fan_state = dict(fan_state)
                             
                             # Publish fan data to Home Assistant
                             self.ha_client.publish(
@@ -2377,18 +2401,10 @@ class AnycubicMqttBridge:
         """Create Home Assistant entities for detected physical ACE Pro boxes."""
         # Get topic prefix and device info
         topic_prefix = self.get_topic_prefix()
-        printer_device_info = self.get_device_info()
-        printer_device_id = printer_device_info["identifiers"][0]
         
         for box_index in sorted(set(box_ids)):
             box_number = box_index + 1
-            device_info = {
-                "identifiers": [f"{printer_device_id}_ace_box_{box_index}"],
-                "name": f"ACE Pro Box {box_number}",
-                "manufacturer": "Anycubic",
-                "model": "ACE Pro Filament System",
-                "via_device": printer_device_id,
-            }
+            device_info = self.get_color_box_device_info(box_index)
             # List of box sensors to create for this specific box
             sensors = [
                 {
@@ -2545,6 +2561,335 @@ class AnycubicMqttBridge:
         )
         
         logger.info("Created print control buttons in Home Assistant")
+        self._create_temperature_fan_controls()
+
+    def _create_temperature_fan_controls(self):
+        if getattr(self, "temperature_fan_controls_created", False):
+            return
+
+        topic_prefix = self.get_topic_prefix()
+        device_info = self.get_device_info()
+        temperature_state_topic = f"homeassistant/sensor/{topic_prefix}/temperature"
+        fan_state_topic = f"homeassistant/sensor/{topic_prefix}/fan"
+        speed_state_topic = f"homeassistant/sensor/{topic_prefix}/state"
+        speed_command_topic = f"homeassistant/select/{topic_prefix}_print_speed_mode_control/set"
+        speed_select = {
+            "name": "Print Speed Mode Control",
+            "unique_id": f"{topic_prefix}_print_speed_mode_control",
+            "state_topic": speed_state_topic,
+            "value_template": "{{ value_json.print_speed_mode_name }}",
+            "command_topic": speed_command_topic,
+            "options": list(PRINT_SPEED_MODE_NAMES.values()),
+            "availability": [
+                {
+                    "topic": speed_state_topic,
+                    "value_template": (
+                        "{{ 'online' if value_json.state in "
+                        "['busy', 'printing', 'paused', 'pausing', 'resuming', 'preheating'] "
+                        "else 'offline' }}"
+                    ),
+                }
+            ],
+            "icon": "mdi:speedometer",
+            "device": device_info,
+        }
+        self.ha_client.publish(
+            f"homeassistant/select/{speed_select['unique_id']}/config",
+            json.dumps(speed_select),
+            retain=True,
+        )
+        self.ha_client.message_callback_add(
+            speed_command_topic, self._on_print_speed_mode_command
+        )
+        self.ha_client.subscribe(speed_command_topic)
+
+        temperature_controls = (
+            {
+                "name": "Target Nozzle Temperature",
+                "key": "target_nozzle_temp",
+                "maximum": 320,
+                "icon": "mdi:printer-3d-nozzle",
+                "handler": self._on_nozzle_temperature_command,
+            },
+            {
+                "name": "Target Hotbed Temperature",
+                "key": "target_hotbed_temp",
+                "maximum": 120,
+                "icon": "mdi:heating-coil",
+                "handler": self._on_hotbed_temperature_command,
+            },
+        )
+        for control in temperature_controls:
+            unique_id = f"{topic_prefix}_{control['key']}_control"
+            command_topic = f"homeassistant/number/{unique_id}/set"
+            config = {
+                "name": control["name"],
+                "unique_id": unique_id,
+                "state_topic": temperature_state_topic,
+                "value_template": f"{{{{ value_json.{control['key']} }}}}",
+                "command_topic": command_topic,
+                "min": 0,
+                "max": control["maximum"],
+                "step": 1,
+                "mode": "slider",
+                "unit_of_measurement": "°C",
+                "device_class": "temperature",
+                "icon": control["icon"],
+                "device": device_info,
+            }
+            self.ha_client.publish(
+                f"homeassistant/number/{unique_id}/config",
+                json.dumps(config),
+                retain=True,
+            )
+            self.ha_client.message_callback_add(command_topic, control["handler"])
+            self.ha_client.subscribe(command_topic)
+
+        fan_controls = (
+            ("Main Fan", "fan_speed_pct", device_info, "mdi:fan"),
+            ("Aux Fan", "aux_fan_speed_pct", device_info, "mdi:fan"),
+            (
+                "Box Fan",
+                "box_fan_level",
+                self.get_color_box_device_info(0),
+                "mdi:fan",
+            ),
+        )
+        for name, key, fan_device_info, icon in fan_controls:
+            unique_id = f"{topic_prefix}_{key}_control"
+            command_topic = f"homeassistant/fan/{unique_id}/percentage/set"
+            config = {
+                "name": name,
+                "unique_id": unique_id,
+                "state_topic": fan_state_topic,
+                "state_value_template": (
+                    f"{{{{ 'ON' if value_json.{key} | int(0) > 0 else 'OFF' }}}}"
+                ),
+                "percentage_state_topic": fan_state_topic,
+                "percentage_value_template": f"{{{{ value_json.{key} }}}}",
+                "percentage_command_topic": command_topic,
+                "command_topic": command_topic,
+                "payload_on": "ON",
+                "payload_off": "OFF",
+                "speed_range_min": 0,
+                "speed_range_max": 100,
+                "icon": icon,
+                "device": fan_device_info,
+            }
+            self.ha_client.publish(
+                f"homeassistant/fan/{unique_id}/config",
+                json.dumps(config),
+                retain=True,
+            )
+            self.ha_client.message_callback_add(
+                command_topic,
+                lambda client, userdata, msg, fan_key=key: self._on_fan_command(
+                    client, userdata, msg, fan_key
+                ),
+            )
+            self.ha_client.subscribe(command_topic)
+
+        self.temperature_fan_controls_created = True
+        logger.info("Created temperature and fan controls in Home Assistant")
+
+    def _on_print_speed_mode_command(self, client, userdata, msg):
+        option = msg.payload.decode("utf-8").strip()
+        mode = next(
+            (mode for mode, name in PRINT_SPEED_MODE_NAMES.items() if name == option),
+            None,
+        )
+        if mode is None:
+            logger.warning("Ignoring invalid print speed mode: %s", option)
+            return
+
+        active_states = {
+            "busy",
+            "printing",
+            "paused",
+            "pausing",
+            "resuming",
+            "preheating",
+        }
+        if not any(
+            str(state or "").strip().lower() in active_states
+            for state in (
+                getattr(self, "printer_state", None),
+                getattr(self, "current_print_state", None),
+            )
+        ):
+            logger.info("Ignoring print speed mode change while no print is active")
+            return
+
+        print_data = getattr(self, "latest_print_data", {})
+        task_id = next(
+            (
+                str(print_data[key])
+                for key in ("taskid", "project_id", "id")
+                if print_data.get(key) is not None
+            ),
+            "-1",
+        )
+        if not self._publish_anycubic_command(
+            "print",
+            "print",
+            "update",
+            {"taskid": task_id, "settings": {"print_speed_mode": mode}},
+        ):
+            return
+
+        state = dict(getattr(self, "latest_printer_state", {}))
+        state["print_speed_mode"] = mode
+        state["print_speed_mode_name"] = PRINT_SPEED_MODE_NAMES[mode]
+        state["last_updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
+        self.latest_printer_state = state
+        self.ha_client.publish(
+            f"homeassistant/sensor/{self.get_topic_prefix()}/state",
+            json.dumps(state),
+            retain=True,
+        )
+
+    def _publish_anycubic_command(self, endpoint, message_type, action, data):
+        if not self.printer_mode_id or not self.printer_device_id:
+            logger.error("Cannot send %s command: Missing printer IDs", endpoint)
+            return False
+
+        import uuid
+
+        payload = {
+            "type": message_type,
+            "action": action,
+            "timestamp": int(time.time() * 1000),
+            "msgid": str(uuid.uuid4()),
+            "data": data,
+        }
+        root = "anycubic/anycubicCloud/v1"
+        topics = (
+            f"{root}/printer/public/{self.printer_mode_id}/{self.printer_device_id}/{endpoint}",
+            f"{root}/pc/printer/{self.printer_mode_id}/{self.printer_device_id}/{endpoint}",
+        )
+        try:
+            for topic in topics:
+                self.anycubic_client.publish(topic, json.dumps(payload))
+            return True
+        except Exception as e:
+            logger.error("Error sending %s command: %s", endpoint, e)
+            return False
+
+    def _on_nozzle_temperature_command(self, client, userdata, msg):
+        self._on_temperature_command("target_nozzle_temp", 320, msg)
+
+    def _on_hotbed_temperature_command(self, client, userdata, msg):
+        self._on_temperature_command("target_hotbed_temp", 120, msg)
+
+    def _on_temperature_command(self, key, maximum, msg):
+        try:
+            requested = float(msg.payload.decode("utf-8").strip())
+            if not requested.is_integer():
+                raise ValueError("temperature must be a whole number")
+            value = int(requested)
+        except (UnicodeDecodeError, ValueError):
+            logger.warning("Ignoring invalid temperature command: %r", msg.payload)
+            return
+
+        if not 0 <= value <= maximum:
+            logger.warning("Ignoring out-of-range %s: %s", key, value)
+            return
+
+        settings = {}
+        current_state = getattr(self, "latest_temperature_state", {})
+        if value != 0:
+            for target_key in ("target_nozzle_temp", "target_hotbed_temp"):
+                current_value = current_state.get(target_key)
+                if current_value is not None:
+                    settings[target_key] = int(current_value)
+        settings[key] = value
+
+        if not self._publish_anycubic_command(
+            "tempature", "tempature", "set", settings
+        ):
+            return
+
+        temperature_state = dict(current_state)
+        temperature_state.setdefault("hotbed_temp", None)
+        temperature_state.setdefault("nozzle_temp", None)
+        temperature_state["target_nozzle_temp"] = settings.get(
+            "target_nozzle_temp", current_state.get("target_nozzle_temp")
+        )
+        temperature_state["target_hotbed_temp"] = settings.get(
+            "target_hotbed_temp", current_state.get("target_hotbed_temp")
+        )
+        temperature_state[key] = value
+        temperature_state["last_updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
+        self.latest_temperature_state = temperature_state
+        self.ha_client.publish(
+            f"homeassistant/sensor/{self.get_topic_prefix()}/temperature",
+            json.dumps(temperature_state),
+            retain=True,
+        )
+
+    def _on_fan_command(self, client, userdata, msg, fan_key):
+        try:
+            payload = msg.payload.decode("utf-8").strip().upper()
+            if payload == "ON":
+                value = 100
+            elif payload == "OFF":
+                value = 0
+            else:
+                requested = float(payload)
+                if not requested.is_integer():
+                    raise ValueError("fan speed must be a whole number")
+                value = int(requested)
+        except (UnicodeDecodeError, ValueError):
+            logger.warning("Ignoring invalid fan command: %r", msg.payload)
+            return
+
+        if not 0 <= value <= 100:
+            logger.warning("Ignoring out-of-range fan value: %s", value)
+            return
+
+        task_id = "-1"
+        print_data = getattr(self, "latest_print_data", {})
+        for task_key in ("taskid", "project_id", "id"):
+            if print_data.get(task_key) is not None:
+                task_id = str(print_data[task_key])
+                break
+
+        if fan_key == "fan_speed_pct":
+            fan_data = {
+                key: int(current_value)
+                for key, current_value in getattr(self, "latest_fan_state", {}).items()
+                if key in {"fan_speed_pct", "aux_fan_speed_pct", "box_fan_level"}
+                and current_value is not None
+            }
+            fan_data["fan_speed_pct"] = value
+            fan_data["taskid"] = task_id
+            for action in ("setSpeed", "auto"):
+                if not self._publish_anycubic_command(
+                    "fan", "fan", action, fan_data
+                ):
+                    return
+        else:
+            if not self._publish_anycubic_command(
+                "print",
+                "print",
+                "update",
+                {"taskid": task_id, "settings": {fan_key: value}},
+            ):
+                return
+            if not self._publish_anycubic_command(
+                "fan", "fan", "auto", {fan_key: value}
+            ):
+                return
+
+        fan_state = dict(getattr(self, "latest_fan_state", {}))
+        fan_state[fan_key] = value
+        fan_state["last_updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
+        self.latest_fan_state = fan_state
+        self.ha_client.publish(
+            f"homeassistant/sensor/{self.get_topic_prefix()}/fan",
+            json.dumps(fan_state),
+            retain=True,
+        )
 
     def _create_print_preview_entity(self):
         """Create a print preview image entity in Home Assistant"""

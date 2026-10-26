@@ -53,10 +53,14 @@ The application uses environment variables for configuration. You can set the fo
    Supervisor MQTT service; the `HA_*` values remain fallbacks for standalone use.
 
 The Print Speed Mode sensor maps Anycubic values to `Silent`, `Standard`, or
-`Sport`.
+`Sport`; the matching select can change modes while a print is active.
 
 Each detected ACE Pro box and its filament sensors are grouped under a separate
 Home Assistant child device linked to the printer.
+
+Target nozzle and hotbed temperatures are adjustable from Home Assistant, as
+are the main, auxiliary, and ACE box fans. Temperature controls use `0–320 °C`
+for the nozzle and `0–120 °C` for the bed; fan controls use `0–100%`.
 
 ### Obico ML (Home Assistant add-on)
 
