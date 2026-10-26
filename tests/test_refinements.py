@@ -67,6 +67,14 @@ class MqttErrorTests(unittest.TestCase):
             translate_mqtt_error_message("Unexpected error"), "Unexpected error"
         )
 
+    def test_user_initiated_print_message_is_not_a_problem(self):
+        result = classify_mqtt_error(
+            {"type": "print", "state": "printing", "code": 200, "msg": "用户发起"}
+        )
+
+        self.assertFalse(result["job_failed"])
+        self.assertFalse(result["print_problem"])
+
     def test_normal_done_ack_is_not_an_error(self):
         result = classify_mqtt_error(
             {"type": "print", "state": "done", "code": 200, "msg": "getSliceParam/done"}

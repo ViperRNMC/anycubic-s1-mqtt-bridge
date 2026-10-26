@@ -71,7 +71,7 @@ def classify_mqtt_error(message):
     ).strip()
     normalized_text = text.lower()
     successful_message = (
-        normalized_text in {"", "done", "success", "ok"}
+        normalized_text in {"", "done", "success", "ok", "用户发起"}
         or normalized_text.endswith("/done")
     )
     job_failed = any(token in state for token in ("fail", "error", "abort", "cancel"))
