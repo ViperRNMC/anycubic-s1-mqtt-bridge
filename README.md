@@ -59,6 +59,9 @@ Each detected ACE Pro box and its filament sensors are grouped under a separate
 Home Assistant child device linked to the printer. Box names use the firmware
 index, so firmware ID `0` appears as `ACE Pro Box 0`.
 
+`Printer State` reports leveling/preheating phases. During leveling,
+`Print Progress` shows the leveling percentage alongside the `leveling` state.
+
 The printer serial number is shown in Home Assistant device information; its IP
 address remains available as a diagnostic entity.
 Printer firmware and each ACE Pro box's firmware are also shown in their

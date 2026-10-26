@@ -186,6 +186,34 @@ class PrinterStateTests(unittest.TestCase):
             "printing",
         )
 
+    def test_leveling_and_preheating_are_distinct_printer_states(self):
+        for state in ("auto_leveling", "autoLeveling", "leveling"):
+            self.assertEqual(
+                resolve_print_job_state("start", state, "unknown"),
+                "leveling",
+            )
+        self.assertEqual(
+            resolve_print_job_state("start", "preheating", "unknown"),
+            "preheating",
+        )
+
+    def test_print_progress_remains_available_during_leveling(self):
+        leveling_state = build_print_job_state({"progress": 52}, "leveling")
+
+        self.assertEqual(leveling_state["state"], "leveling")
+        self.assertEqual(leveling_state["progress"], 52)
+
+    def test_auto_leveling_states_are_reported_as_leveling(self):
+        for reported_state in ("auto_leveling", "autoLeveling", "leveling"):
+            self.assertEqual(
+                resolve_print_job_state("start", reported_state, "unknown"),
+                "leveling",
+            )
+
+    def test_leveling_phase_overrides_transient_printer_busy_or_free(self):
+        self.assertEqual(resolve_printer_state("busy", "leveling", "unknown"), "leveling")
+        self.assertEqual(resolve_printer_state("free", "preheating", "unknown"), "preheating")
+
     def test_partial_print_update_preserves_progress_and_ignores_regression(self):
         previous = {
             "filename": "part.gcode",

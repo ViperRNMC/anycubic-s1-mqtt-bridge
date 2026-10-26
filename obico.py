@@ -96,6 +96,8 @@ def resolve_printer_state(reported_state, print_job_state, previous_state):
     previous = str(previous_state or "").strip().lower()
     inactive_states = {"", "unknown", "unavailable", "free", "idle", "standby"}
 
+    if print_job in {"leveling", "preheating"} and reported in inactive_states | {"busy"}:
+        return print_job
     if print_job == "printing" and reported in inactive_states:
         return "busy"
     if print_job == "paused" and reported in inactive_states:
@@ -112,6 +114,10 @@ def resolve_print_job_state(action, reported_state, previous_state):
 
     if action == "getsliceparam":
         return previous or "unknown"
+    if action == "start" and reported in {"auto_leveling", "autoleveling", "leveling"}:
+        return "leveling"
+    if action == "start" and reported == "preheating":
+        return "preheating"
     if action in {"start", "resume"} and reported in {"printing", "busy"}:
         return "printing"
     if action == "pause":

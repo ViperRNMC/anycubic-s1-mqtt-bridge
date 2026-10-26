@@ -50,6 +50,16 @@ class FirmwareVersionTests(unittest.TestCase):
             "1.2.3",
         )
 
+    def test_accepts_camel_case_firmware_fields(self):
+        self.assertEqual(
+            get_firmware_version({"firmwareVersion": "4.5.6"}, ("firmwareVersion",)),
+            "4.5.6",
+        )
+        self.assertEqual(
+            get_firmware_version({"fwVersion": "7.8.9"}, ("fwVersion",)),
+            "7.8.9",
+        )
+
     def test_ignores_missing_and_unknown_versions(self):
         self.assertIsNone(
             get_firmware_version({"version": "Unknown"}, ("version",))

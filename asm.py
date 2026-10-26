@@ -1818,7 +1818,14 @@ class AnycubicMqttBridge:
                     ) or "Unknown"
                     firmware_version = get_firmware_version(
                         printer_data,
-                        ("version", "fw_version", "firmware_version", "firmware"),
+                        (
+                            "version",
+                            "fw_version",
+                            "firmware_version",
+                            "firmwareVersion",
+                            "fwVersion",
+                            "firmware",
+                        ),
                     )
                     if firmware_version:
                         self.printer_version = firmware_version
@@ -2128,6 +2135,21 @@ class AnycubicMqttBridge:
                             self.printer_state = "paused"
                         elif self.current_print_state == "free":
                             self.printer_state = "free"
+                        elif self.current_print_state in {"leveling", "preheating"}:
+                            self.printer_state = self.current_print_state
+
+                        topic_prefix = self.get_topic_prefix()
+                        state_data = dict(getattr(self, "latest_printer_state", {}))
+                        state_data["state"] = self.printer_state
+                        state_data["last_updated"] = time.strftime(
+                            "%Y-%m-%d %H:%M:%S"
+                        )
+                        self.latest_printer_state = state_data
+                        self.ha_client.publish(
+                            f"homeassistant/sensor/{topic_prefix}/state",
+                            json.dumps(state_data),
+                            retain=True,
+                        )
 
                         if "data" in data and data["data"]:
                             print_data = data["data"]
@@ -2210,7 +2232,15 @@ class AnycubicMqttBridge:
                                 )
                                 latest_box_data.update(color_box_data)
                                 firmware = get_firmware_version(
-                                    latest_box_data, ("firmware",)
+                                    latest_box_data,
+                                    (
+                                        "firmware",
+                                        "firmware_version",
+                                        "firmwareVersion",
+                                        "fw_version",
+                                        "fwVersion",
+                                        "version",
+                                    ),
                                 )
                                 if box_id not in self.discovered_color_box_ids or (
                                     firmware
@@ -2472,7 +2502,14 @@ class AnycubicMqttBridge:
             box_number = box_index
             firmware = get_firmware_version(
                 getattr(self, "latest_color_box_data", {}).get(box_index, {}),
-                ("firmware",),
+                (
+                    "firmware",
+                    "firmware_version",
+                    "firmwareVersion",
+                    "fw_version",
+                    "fwVersion",
+                    "version",
+                ),
             )
             device_info = self.get_color_box_device_info(box_index, firmware)
             # List of box sensors to create for this specific box
@@ -3232,6 +3269,19 @@ class AnycubicMqttBridge:
                 if response.status_code == 200:
                     data = response.json()
                     logger.info(f"Received HTTP discovery response: {data}")
+                    firmware_version = get_firmware_version(
+                        data,
+                        (
+                            "version",
+                            "fw_version",
+                            "firmware_version",
+                            "firmwareVersion",
+                            "fwVersion",
+                            "firmware",
+                        ),
+                    )
+                    if firmware_version:
+                        self.printer_version = firmware_version
 
                     # Check if printer is in cloud mode
                     if data.get("ctrlType") == "cloud":
@@ -3324,6 +3374,19 @@ class AnycubicMqttBridge:
                                             logger.info(
                                                 "Successfully decrypted printer data"
                                             )
+                                            firmware_version = get_firmware_version(
+                                                printer_data,
+                                                (
+                                                    "version",
+                                                    "fw_version",
+                                                    "firmware_version",
+                                                    "firmwareVersion",
+                                                    "fwVersion",
+                                                    "firmware",
+                                                ),
+                                            )
+                                            if firmware_version:
+                                                self.printer_version = firmware_version
 
                                             # Extract connection parameters from decrypted data
                                             if "broker" in printer_data:
