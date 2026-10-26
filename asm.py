@@ -2348,6 +2348,7 @@ class AnycubicMqttBridge:
                     "state_topic": f"homeassistant/sensor/{topic_prefix}/color_box_{box_index}",
                     "value_template": "{{ 'Connected' if value_json.status == 1 else 'Disconnected' }}",
                     "icon": "mdi:printer-3d-nozzle",
+                    "entity_category": "diagnostic",
                     "device": device_info,
                 },
                 {
@@ -2358,6 +2359,7 @@ class AnycubicMqttBridge:
                     "unit_of_measurement": "°C",
                     "device_class": "temperature",
                     "icon": "mdi:thermometer",
+                    "entity_category": "diagnostic",
                     "device": device_info,
                 },
                 {
@@ -2366,6 +2368,7 @@ class AnycubicMqttBridge:
                     "state_topic": f"homeassistant/sensor/{topic_prefix}/color_box_{box_index}",
                     "value_template": "{{ value_json.loaded_slot if value_json.loaded_slot >= 0 else 'None' }}",
                     "icon": "mdi:numeric",
+                    "entity_category": "diagnostic",
                     "device": device_info,
                 },
             ]
@@ -2376,19 +2379,21 @@ class AnycubicMqttBridge:
                 sensors.extend(
                     (
                         {
-                            "name": f"Filament {global_slot} Type",
+                            "name": f"Filament {global_slot} Type (Box {box_index})",
                             "unique_id": f"{topic_prefix}_filament_{global_slot}_type",
                             "state_topic": slot_topic,
                             "value_template": "{{ value_json.type }}",
                             "icon": "mdi:spool",
+                            "entity_category": "diagnostic",
                             "device": device_info,
                         },
                         {
-                            "name": f"Filament {global_slot} Color",
+                            "name": f"Filament {global_slot} Color (Box {box_index})",
                             "unique_id": f"{topic_prefix}_filament_{global_slot}_color",
                             "state_topic": slot_topic,
                             "value_template": "{{ value_json.color_hex }}",
                             "icon": "mdi:palette",
+                            "entity_category": "diagnostic",
                             "device": device_info,
                         },
                     )
@@ -2408,6 +2413,7 @@ class AnycubicMqttBridge:
                         "state_topic": f"homeassistant/sensor/{topic_prefix}/color_box",
                         "value_template": "{{ 'Connected' if value_json.status == 1 else 'Disconnected' }}",
                         "icon": "mdi:printer-3d-nozzle",
+                        "entity_category": "diagnostic",
                         "device": device_info,
                     },
                     {
@@ -2418,6 +2424,7 @@ class AnycubicMqttBridge:
                         "unit_of_measurement": "°C",
                         "device_class": "temperature",
                         "icon": "mdi:thermometer",
+                        "entity_category": "diagnostic",
                         "device": device_info,
                     },
                     {
@@ -2426,6 +2433,7 @@ class AnycubicMqttBridge:
                         "state_topic": f"homeassistant/sensor/{topic_prefix}/color_box",
                         "value_template": "{{ value_json.loaded_slot if value_json.loaded_slot >= 0 else 'None' }}",
                         "icon": "mdi:numeric",
+                        "entity_category": "diagnostic",
                         "device": device_info,
                     },
                 ]
