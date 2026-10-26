@@ -55,6 +55,26 @@ The application uses environment variables for configuration. You can set the fo
 The Print Speed Mode sensor maps Anycubic values to `Silent`, `Standard`, or
 `Sport`.
 
+### Obico ML (Home Assistant add-on)
+
+Install and start the Obico ML API add-on from
+[mattjacobson6/ha-addons](https://github.com/mattjacobson6/ha-addons) (the
+`obico-ml-api` folder). In this bridge add-on's configuration, enable
+**Obico ML**. The bridge searches installed add-ons through the Supervisor API
+for **Obico ML** and reads its internal hostname automatically. It then adds
+`http://`, port `3333`, and `/detect/`. The hostname setting is a fallback if
+Supervisor cannot find the add-on or its internal hostname cannot be reached.
+This requires the add-on's `manager` Supervisor role. The bridge also checks
+`/hc/` every 30 seconds and reports Obico entities unavailable when the API
+cannot be reached.
+
+Set the detection interval and threshold as needed. The threshold is between
+`0` and `1` (default `0.2`). The bridge registers a communication switch,
+failure binary sensor, confidence sensor, and detection image in Home Assistant
+through MQTT discovery. Detection only runs while the printer state is `busy`.
+When Obico detects a failure during `busy`, the bridge presses the existing
+Pause Print button once for that failure.
+
 ## Docker Setup
 
 To run the application using Docker, you can use the provided `Dockerfile` and `docker-compose.yml`.

@@ -55,6 +55,29 @@ from the Supervisor MQTT service automatically. The `mqtt_broker`, `mqtt_port`,
 `mqtt_user`, and `mqtt_pass` settings are fallback values for standalone or
 non-Supervisor deployments.
 
+### Obico ML
+
+Obico ML is optional and disabled by default. Install and start the Obico ML
+API add-on from [mattjacobson6/ha-addons](https://github.com/mattjacobson6/ha-addons)
+(the `obico-ml-api` folder), then enable Obico ML in this add-on's options. In
+the Supervisor API, the bridge finds the installed **Obico ML** add-on and
+reads its internal hostname automatically. It builds the API URL using HTTP,
+port `3333`, and `/detect/`. The hostname field is only a fallback if
+Supervisor cannot find Obico ML or its internal hostname is unreachable. This
+requires the `manager` Supervisor role.
+The bridge also checks `/hc/` every 30 seconds and marks Obico entities
+unavailable when the backend cannot be reached.
+
+Set the detection interval and threshold as needed. The threshold is between
+`0` and `1` (default `0.2`). When the printer camera is available, the bridge
+creates an Obico communication switch, failure binary sensor, confidence
+sensor, and detection image in Home Assistant. Detection only runs while the
+printer state is `busy`. When Obico detects a failure during `busy`, the bridge
+presses the existing Pause Print button once for that failure. It will not
+send another pause until a clean detection or the printer leaves `busy`. The
+Obico communication switch still pauses detection without restarting the
+add-on.
+
 ## Docker Setup
 
 To run the application using Docker, you can use the provided `Dockerfile` and `docker-compose.yml`.
