@@ -61,6 +61,8 @@ index, so firmware ID `0` appears as `ACE Pro Box 0`.
 
 The printer serial number is shown in Home Assistant device information; its IP
 address remains available as a diagnostic entity.
+Printer firmware and each ACE Pro box's firmware are also shown in their
+respective Home Assistant device information when reported by the printer.
 
 Target nozzle and hotbed temperatures are adjustable from Home Assistant, as
 are the main, auxiliary, and ACE box fans. Temperature controls use `0–320 °C`

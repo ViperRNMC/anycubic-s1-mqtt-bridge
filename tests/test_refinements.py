@@ -6,6 +6,7 @@ import requests
 from bridge_helpers import (
     classify_mqtt_error,
     discover_mqtt_settings,
+    get_firmware_version,
     global_filament_index,
     get_color_box_id,
     normalize_printer_device_name,
@@ -37,6 +38,23 @@ class DeviceNameTests(unittest.TestCase):
             normalize_printer_device_name("Workshop Printer", "Kobra S1"),
             "Workshop Printer",
         )
+
+
+class FirmwareVersionTests(unittest.TestCase):
+    def test_uses_first_available_firmware_field(self):
+        self.assertEqual(
+            get_firmware_version(
+                {"version": "Unknown", "fw_version": "1.2.3"},
+                ("version", "fw_version"),
+            ),
+            "1.2.3",
+        )
+
+    def test_ignores_missing_and_unknown_versions(self):
+        self.assertIsNone(
+            get_firmware_version({"version": "Unknown"}, ("version",))
+        )
+        self.assertIsNone(get_firmware_version(None, ("version",)))
 
 
 class MqttErrorTests(unittest.TestCase):

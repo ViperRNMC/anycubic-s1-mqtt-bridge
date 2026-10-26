@@ -23,6 +23,20 @@ def print_speed_mode_name(value):
     return PRINT_SPEED_MODE_NAMES.get(mode, f"Unknown ({mode})")
 
 
+def get_firmware_version(data, keys):
+    if not isinstance(data, dict):
+        return None
+
+    for key in keys:
+        value = data.get(key)
+        if value is None:
+            continue
+        version = str(value).strip()
+        if version and version.casefold() not in {"unknown", "none", "null", "n/a"}:
+            return version
+    return None
+
+
 def normalize_printer_device_name(name, model):
     display_name = str(name or "").strip()
     model_name = str(model or "").strip()

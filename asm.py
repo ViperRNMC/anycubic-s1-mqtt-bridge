@@ -11,6 +11,7 @@ import requests
 from bridge_helpers import (
     classify_mqtt_error,
     discover_mqtt_settings,
+    get_firmware_version,
     get_color_box_id,
     global_filament_index,
     normalize_printer_device_name,
@@ -158,6 +159,7 @@ class AnycubicMqttBridge:
         self.connection_healthy = Event()  # Event to signal healthy connection
         self.snapshot_enabled = Event()  # Event to control snapshot worker
         self.discovered_color_box_ids = set()
+        self.discovered_color_box_firmware = {}
         self.latest_color_box_data = {}
         self.legacy_color_box_cleanup_done = False
 
@@ -207,22 +209,30 @@ class AnycubicMqttBridge:
             ),
             "model": model,
             "manufacturer": "Anycubic",
-            "sw_version": getattr(self, "printer_version", "Unknown"),
         }
+        firmware = get_firmware_version(
+            {"version": getattr(self, "printer_version", None)}, ("version",)
+        )
+        if firmware:
+            device_info["sw_version"] = firmware
         if self.printer_cn:
             device_info["serial_number"] = self.printer_cn
         return device_info
 
-    def get_color_box_device_info(self, box_index):
+    def get_color_box_device_info(self, box_index, firmware=None):
         printer_device_id = self.get_device_info()["identifiers"][0]
         box_number = int(box_index)
-        return {
+        device_info = {
             "identifiers": [f"{printer_device_id}_ace_box_{box_index}"],
             "name": f"ACE Pro Box {box_number}",
             "manufacturer": "Anycubic",
             "model": "ACE Pro Filament System",
             "via_device": printer_device_id,
         }
+        firmware = get_firmware_version({"firmware": firmware}, ("firmware",))
+        if firmware:
+            device_info["sw_version"] = firmware
+        return device_info
 
     def discover_printer_with_retry(self):
         """Discover the printer with exponential backoff retry, continuing indefinitely"""
@@ -1806,14 +1816,19 @@ class AnycubicMqttBridge:
                     self.device_model = printer_data.get("model") or getattr(
                         self, "printer_model", None
                     ) or "Unknown"
+                    firmware_version = get_firmware_version(
+                        printer_data,
+                        ("version", "fw_version", "firmware_version", "firmware"),
+                    )
+                    if firmware_version:
+                        self.printer_version = firmware_version
 
                     # Define the device for all sensors
                     device_info = self.get_device_info()
 
                     # Update device info with any additional discovered properties
-                    if "version" in printer_data:
-                        self.printer_version = printer_data["version"]
-                        device_info["sw_version"] = printer_data["version"]
+                    if firmware_version:
+                        device_info["sw_version"] = firmware_version
 
                     # Create individual sensors
                     sensors = []
@@ -2188,19 +2203,34 @@ class AnycubicMqttBridge:
                                 for fallback_index, box_data in enumerate(box_items)
                             ]
                             box_ids = {box_id for box_id, _ in identified_boxes}
-                            new_box_ids = box_ids - self.discovered_color_box_ids
-                            if new_box_ids:
-                                logger.info(
-                                    "Detected ACE Pro box IDs: %s", sorted(new_box_ids)
-                                )
-                                self._create_color_box_sensors(new_box_ids)
-                                self.discovered_color_box_ids.update(new_box_ids)
-
+                            boxes_to_refresh = set()
                             for box_id, color_box_data in identified_boxes:
                                 latest_box_data = self.latest_color_box_data.setdefault(
                                     box_id, {}
                                 )
                                 latest_box_data.update(color_box_data)
+                                firmware = get_firmware_version(
+                                    latest_box_data, ("firmware",)
+                                )
+                                if box_id not in self.discovered_color_box_ids or (
+                                    firmware
+                                    and self.discovered_color_box_firmware.get(box_id)
+                                    != firmware
+                                ):
+                                    boxes_to_refresh.add(box_id)
+                                if firmware:
+                                    self.discovered_color_box_firmware[box_id] = firmware
+
+                            if boxes_to_refresh:
+                                logger.info(
+                                    "Publishing ACE Pro device info for box IDs: %s",
+                                    sorted(boxes_to_refresh),
+                                )
+                                self._create_color_box_sensors(boxes_to_refresh)
+                                self.discovered_color_box_ids.update(boxes_to_refresh)
+
+                            for box_id, color_box_data in identified_boxes:
+                                latest_box_data = self.latest_color_box_data[box_id]
                                 box_state = {
                                     "box_id": box_id,
                                     "status": latest_box_data.get("status", 0),
@@ -2440,7 +2470,11 @@ class AnycubicMqttBridge:
         
         for box_index in sorted(set(box_ids)):
             box_number = box_index
-            device_info = self.get_color_box_device_info(box_index)
+            firmware = get_firmware_version(
+                getattr(self, "latest_color_box_data", {}).get(box_index, {}),
+                ("firmware",),
+            )
+            device_info = self.get_color_box_device_info(box_index, firmware)
             # List of box sensors to create for this specific box
             sensors = [
                 {
