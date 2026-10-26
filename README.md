@@ -49,6 +49,11 @@ The application uses environment variables for configuration. You can set the fo
 - `SNAPSHOT_INTERVAL_IDLE`: Interval for taking snapshots when printer is idle.
 - `SNAPSHOT_INTERVAL_BUSY`: Interval for taking snapshots when printer is busy.
 - `INFO_UPDATE_INTERVAL`: Interval for updating printer information.
+- In the Home Assistant add-on, MQTT broker settings are discovered from the
+   Supervisor MQTT service; the `HA_*` values remain fallbacks for standalone use.
+
+The Print Speed Mode sensor maps Anycubic values to `Silent`, `Standard`, or
+`Sport`.
 
 ### Obico ML (Home Assistant add-on)
 
