@@ -506,6 +506,7 @@ class AnycubicMqttBridge:
                 "availability_topic": f"homeassistant/sensor/{topic_prefix}_connectivity/availability",
                 "json_attributes_topic": f"homeassistant/sensor/{topic_prefix}_connectivity/state",
                 "icon": "mdi:network",
+                "entity_category": "diagnostic",
                 "device": device_info,
             }
 
@@ -767,6 +768,7 @@ class AnycubicMqttBridge:
             f"{topic_prefix}_serial_number",
             f"{topic_prefix}_target_nozzle_temp",
             f"{topic_prefix}_target_hotbed_temp",
+            f"{topic_prefix}_printer_camera_url",
         ):
             self.ha_client.publish(
                 f"homeassistant/sensor/{unique_id}/config",
@@ -778,6 +780,8 @@ class AnycubicMqttBridge:
             f"{topic_prefix}_color_box_status",
             f"{topic_prefix}_color_box_temp",
             f"{topic_prefix}_active_filament_slot",
+            f"{topic_prefix}_fan_speed",
+            f"{topic_prefix}_aux_fan_speed",
             f"{topic_prefix}_box_fan_level",
         ):
             self.ha_client.publish(
@@ -1793,45 +1797,6 @@ class AnycubicMqttBridge:
                             }
                         )
 
-                    # Fan speed sensors
-                    if "fan_speed_pct" in printer_data:
-                        sensors.append(
-                            {
-                                "name": "Fan Speed",
-                                "unique_id": f"{topic_prefix}_fan_speed",
-                                "state_topic": f"homeassistant/sensor/{topic_prefix}/fan",
-                                "value_template": "{{ value_json.fan_speed_pct }}",
-                                "unit_of_measurement": "%",
-                                "icon": "mdi:fan",
-                                "device": device_info,
-                            }
-                        )
-
-                    if "aux_fan_speed_pct" in printer_data:
-                        sensors.append(
-                            {
-                                "name": "Aux Fan Speed",
-                                "unique_id": f"{topic_prefix}_aux_fan_speed",
-                                "state_topic": f"homeassistant/sensor/{topic_prefix}/fan",
-                                "value_template": "{{ value_json.aux_fan_speed_pct }}",
-                                "unit_of_measurement": "%",
-                                "icon": "mdi:fan",
-                                "device": device_info,
-                            }
-                        )
-
-                    if "box_fan_level" in printer_data:  
-                        sensors.append(
-                            {
-                                "name": "Box Fan Level",
-                                "unique_id": f"{topic_prefix}_box_fan_level",
-                                "state_topic": f"homeassistant/sensor/{topic_prefix}/fan",
-                                "value_template": "{{ value_json.box_fan_level }}",
-                                "icon": "mdi:fan",
-                                "device": self.get_color_box_device_info(0),
-                            }
-                        )
-
                     # Print speed mode
                     if "print_speed_mode" in printer_data:
                         sensors.append(
@@ -1862,18 +1827,6 @@ class AnycubicMqttBridge:
                     # Store the stream URL for snapshot use if available
                     if "urls" in printer_data and "rtspUrl" in printer_data["urls"]:
                         self.stream_url = printer_data["urls"]["rtspUrl"]
-
-                        # Add a URL sensor
-                        sensors.append(
-                            {
-                                "name": "Printer Camera URL",
-                                "unique_id": f"{topic_prefix}_printer_camera_url",
-                                "state_topic": f"homeassistant/sensor/{topic_prefix}/state",
-                                "value_template": "{{ value_json.camera_url }}",
-                                "icon": "mdi:cctv",
-                                "device": device_info,
-                            }
-                        )
 
                         # Create a simple image entity for the snapshot
                         topic_prefix = self.get_topic_prefix()
@@ -2596,6 +2549,7 @@ class AnycubicMqttBridge:
             "value_template": "{{ value_json.message or value_json.state or value_json.code }}",
             "json_attributes_topic": f"homeassistant/sensor/{topic_prefix}/last_print_error",
             "icon": "mdi:message-alert-outline",
+            "entity_category": "diagnostic",
             "device": device_info,
         }
         self.ha_client.publish(
@@ -2723,7 +2677,7 @@ class AnycubicMqttBridge:
             (
                 "Box Fan",
                 "box_fan_level",
-                self.get_color_box_device_info(0),
+                device_info,
                 "mdi:fan",
             ),
         )

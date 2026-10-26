@@ -122,7 +122,11 @@ To use this view:
 
 This view uses elements from https://github.com/piitaya/lovelace-mushroom for the AMS spool visualization and badges.
 
-The camera is manually configured in configuration.yaml as below
+The live FFmpeg camera is configured in Home Assistant, because add-ons cannot
+create Home Assistant YAML camera entries through MQTT discovery. The bridge
+still uses the stream URL internally for snapshot fallback and publishes
+periodic images as an image entity. Configure the live camera in
+`configuration.yaml` as below; use the printer IP from the add-on settings.
 
 ```
 camera:
