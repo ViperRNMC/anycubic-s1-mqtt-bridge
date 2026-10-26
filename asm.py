@@ -133,6 +133,7 @@ class AnycubicMqttBridge:
         self.snapshot_thread = None
         self.obico_thread = None
         self.obico_entities_created = False
+        self.obico_threshold = OBICO_THRESHOLD
         self.obico_pause_latched = False
         self.obico_active = Event()
         if OBICO_ENABLED:
@@ -777,6 +778,7 @@ class AnycubicMqttBridge:
         topic_prefix = self.get_topic_prefix()
         for component, unique_id in (
             ("switch", f"{topic_prefix}_obico_communication"),
+            ("number", f"{topic_prefix}_obico_threshold"),
             ("binary_sensor", f"{topic_prefix}_obico_failure"),
             ("sensor", f"{topic_prefix}_obico_confidence"),
             ("image", f"{topic_prefix}_obico_detection"),
@@ -790,6 +792,8 @@ class AnycubicMqttBridge:
             f"homeassistant/sensor/{topic_prefix}/obico/image",
             f"homeassistant/sensor/{topic_prefix}/obico/image_state",
             f"homeassistant/switch/{topic_prefix}_obico/state",
+            f"homeassistant/number/{topic_prefix}_obico_threshold/state",
+            f"homeassistant/number/{topic_prefix}_obico_threshold/set",
         ):
             self.ha_client.publish(topic, "", retain=True)
 
@@ -798,11 +802,21 @@ class AnycubicMqttBridge:
             return
 
         topic_prefix = self.get_topic_prefix()
-        device_info = self.get_device_info()
+        printer_device_info = self.get_device_info()
+        printer_device_id = printer_device_info["identifiers"][0]
+        device_info = {
+            "identifiers": [f"{printer_device_id}_obico"],
+            "name": "Obico ML",
+            "manufacturer": "Obico",
+            "model": "Print Failure Detection",
+            "via_device": printer_device_id,
+        }
         state_topic = f"homeassistant/sensor/{topic_prefix}/obico"
         availability_topic = f"homeassistant/sensor/{topic_prefix}/obico/availability"
         switch_state_topic = f"homeassistant/switch/{topic_prefix}_obico/state"
         switch_command_topic = f"homeassistant/switch/{topic_prefix}_obico/set"
+        threshold_state_topic = f"homeassistant/number/{topic_prefix}_obico_threshold/state"
+        threshold_command_topic = f"homeassistant/number/{topic_prefix}_obico_threshold/set"
         entities = (
             (
                 "switch",
@@ -817,6 +831,23 @@ class AnycubicMqttBridge:
                     "state_off": "OFF",
                     "availability_topic": availability_topic,
                     "icon": "mdi:robot",
+                    "device": device_info,
+                },
+            ),
+            (
+                "number",
+                f"{topic_prefix}_obico_threshold",
+                {
+                    "name": "Obico ML Detection Threshold",
+                    "state_topic": threshold_state_topic,
+                    "command_topic": threshold_command_topic,
+                    "min": 0.0,
+                    "max": 1.0,
+                    "step": 0.01,
+                    "mode": "slider",
+                    "retain": True,
+                    "availability_topic": availability_topic,
+                    "icon": "mdi:tune-variant",
                     "device": device_info,
                 },
             ),
@@ -874,9 +905,18 @@ class AnycubicMqttBridge:
         self.ha_client.message_callback_add(
             switch_command_topic, self._on_obico_switch_command
         )
+        self.ha_client.message_callback_add(
+            threshold_command_topic, self._on_obico_threshold_command
+        )
+        self.ha_client.subscribe(threshold_command_topic)
         self.ha_client.publish(
             switch_state_topic,
             "ON" if self.obico_active.is_set() else "OFF",
+            retain=True,
+        )
+        self.ha_client.publish(
+            threshold_state_topic,
+            f"{self.obico_threshold:g}",
             retain=True,
         )
         self.ha_client.publish(availability_topic, "offline", retain=True)
@@ -892,8 +932,23 @@ class AnycubicMqttBridge:
         else:
             logger.warning("Ignoring invalid Obico switch value: %s", payload)
             return
-
         client.publish(msg.topic.rsplit("/", 1)[0] + "/state", payload, retain=True)
+
+    def _on_obico_threshold_command(self, client, userdata, msg):
+        try:
+            threshold = float(msg.payload.decode("utf-8").strip())
+        except (UnicodeDecodeError, ValueError):
+            logger.warning("Ignoring invalid Obico threshold value: %r", msg.payload)
+            return
+
+        if not 0.0 <= threshold <= 1.0:
+            logger.warning("Ignoring out-of-range Obico threshold: %s", threshold)
+            return
+
+        self.obico_threshold = threshold
+        topic = f"homeassistant/number/{self.get_topic_prefix()}_obico_threshold/state"
+        self.ha_client.publish(topic, f"{threshold:g}", retain=True)
+        logger.info("Updated Obico ML detection threshold to %.2f", threshold)
 
     def _start_obico_worker(self):
         if not OBICO_ENABLED:
@@ -975,13 +1030,13 @@ class AnycubicMqttBridge:
                         "Obico ML sending snapshot: bytes=%d jpeg=%s threshold=%.2f",
                         len(image_data),
                         image_data.startswith(b"\xff\xd8"),
-                        OBICO_THRESHOLD,
+                        self.obico_threshold,
                     )
                     result, api_url, used_fallback = detect_image_with_fallback(
                         image_data,
                         api_url,
                         OBICO_API_URL,
-                        OBICO_THRESHOLD,
+                        self.obico_threshold,
                     )
                     if used_fallback:
                         prefer_fallback_api = True
@@ -2322,10 +2377,18 @@ class AnycubicMqttBridge:
         """Create Home Assistant entities for detected physical ACE Pro boxes."""
         # Get topic prefix and device info
         topic_prefix = self.get_topic_prefix()
-        device_info = self.get_device_info()
+        printer_device_info = self.get_device_info()
+        printer_device_id = printer_device_info["identifiers"][0]
         
         for box_index in sorted(set(box_ids)):
             box_number = box_index + 1
+            device_info = {
+                "identifiers": [f"{printer_device_id}_ace_box_{box_index}"],
+                "name": f"ACE Pro Box {box_number}",
+                "manufacturer": "Anycubic",
+                "model": "ACE Pro Filament System",
+                "via_device": printer_device_id,
+            }
             # List of box sensors to create for this specific box
             sensors = [
                 {

@@ -55,6 +55,9 @@ The application uses environment variables for configuration. You can set the fo
 The Print Speed Mode sensor maps Anycubic values to `Silent`, `Standard`, or
 `Sport`.
 
+Each detected ACE Pro box and its filament sensors are grouped under a separate
+Home Assistant child device linked to the printer.
+
 ### Obico ML (Home Assistant add-on)
 
 Install and start the Obico ML API add-on from
@@ -69,11 +72,13 @@ This requires the add-on's `manager` Supervisor role. The bridge also checks
 cannot be reached.
 
 Set the detection interval and threshold as needed. The threshold is between
-`0` and `1` (default `0.2`). The bridge registers a communication switch,
-failure binary sensor, confidence sensor, and detection image in Home Assistant
-through MQTT discovery. Detection only runs while the printer state is `busy`.
-When Obico detects a failure during `busy`, the bridge presses the existing
-Pause Print button once for that failure.
+`0` and `1` (default `0.2`). Home Assistant also gets a detection-threshold
+slider with `0.01` steps; its retained MQTT value is restored after add-on
+restarts. Obico entities are grouped under a separate `Obico ML` child device
+in Home Assistant. The bridge registers a communication switch, failure binary
+sensor, confidence sensor, and detection image through MQTT discovery. Detection
+only runs while the printer state is `busy`. When Obico detects a failure during
+`busy`, the bridge presses the existing Pause Print button once for that failure.
 
 ## Docker Setup
 

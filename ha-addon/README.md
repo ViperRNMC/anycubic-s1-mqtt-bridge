@@ -71,7 +71,10 @@ unavailable when the backend cannot be reached.
 Set the detection interval and threshold as needed. The threshold is between
 `0` and `1` (default `0.2`). When the printer camera is available, the bridge
 creates an Obico communication switch, failure binary sensor, confidence
-sensor, and detection image in Home Assistant. Detection only runs while the
+sensor, detection image, and detection-threshold slider in Home Assistant. The
+slider ranges from `0` to `1` in `0.01` steps and its value is retained by the
+MQTT broker across add-on restarts. Obico entities are grouped under a separate
+`Obico ML` child device in Home Assistant. Detection only runs while the
 printer state is `busy`. When Obico detects a failure during `busy`, the bridge
 presses the existing Pause Print button once for that failure. It will not
 send another pause until a clean detection or the printer leaves `busy`. The
