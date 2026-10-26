@@ -198,10 +198,13 @@ class AnycubicMqttBridge:
     def get_device_info(self):
         """Return consistent device info dictionary for Home Assistant entities"""
         device_id = self.printer_cn if self.printer_cn else "anycubic_printer"
+        model = getattr(self, "device_model", None)
+        if not model or model == "Unknown":
+            model = getattr(self, "printer_model", None) or "Unknown"
         device_info = {
             "identifiers": [device_id],
             "name": getattr(self, "device_name", "Anycubic Printer"),
-            "model": getattr(self, "device_model", "Unknown"),
+            "model": model,
             "manufacturer": "Anycubic",
             "sw_version": getattr(self, "printer_version", "Unknown"),
         }
@@ -1799,7 +1802,9 @@ class AnycubicMqttBridge:
                     self.device_name = printer_data.get(
                         "printerName", "Anycubic Printer"
                     )
-                    self.device_model = printer_data.get("model", "Unknown")
+                    self.device_model = printer_data.get("model") or getattr(
+                        self, "printer_model", None
+                    ) or "Unknown"
 
                     # Define the device for all sensors
                     device_info = self.get_device_info()
@@ -2770,7 +2775,7 @@ class AnycubicMqttBridge:
                 "command_topic": command_topic,
                 "payload_on": "ON",
                 "payload_off": "OFF",
-                "speed_range_min": 0,
+                "speed_range_min": 1,
                 "speed_range_max": 100,
                 "icon": icon,
                 "device": fan_device_info,
