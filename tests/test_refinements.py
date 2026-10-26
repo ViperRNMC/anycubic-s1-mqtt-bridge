@@ -8,10 +8,10 @@ from bridge_helpers import (
     discover_mqtt_settings,
     global_filament_index,
     get_color_box_id,
+    normalize_printer_device_name,
     normalize_box_slot_index,
     print_speed_mode_name,
     translate_mqtt_error_message,
-    update_mqtt_error_latch,
 )
 
 
@@ -23,6 +23,20 @@ class PrintSpeedModeTests(unittest.TestCase):
 
     def test_unknown_mode_stays_explicit(self):
         self.assertEqual(print_speed_mode_name(7), "Unknown (7)")
+
+
+class DeviceNameTests(unittest.TestCase):
+    def test_removes_redundant_manufacturer_prefix_when_model_is_known(self):
+        self.assertEqual(
+            normalize_printer_device_name("Anycubic Kobra S1", "Kobra S1"),
+            "Kobra S1",
+        )
+
+    def test_preserves_custom_name(self):
+        self.assertEqual(
+            normalize_printer_device_name("Workshop Printer", "Kobra S1"),
+            "Workshop Printer",
+        )
 
 
 class MqttErrorTests(unittest.TestCase):
@@ -87,35 +101,6 @@ class MqttErrorTests(unittest.TestCase):
 
         self.assertTrue(problem["print_problem"])
         self.assertFalse(acknowledgement["print_problem"])
-
-    def test_error_latch_survives_unrelated_done_acknowledgements(self):
-        error = update_mqtt_error_latch(
-            None,
-            {"type": "print", "action": "setHotbedTemp", "code": 11808, "msg": "bed error"},
-        )
-        acknowledgement = update_mqtt_error_latch(
-            error,
-            {"type": "print", "action": "getSliceParam", "state": "done", "code": 200, "msg": "getSliceParam/done"},
-        )
-
-        self.assertIs(acknowledgement, error)
-        self.assertTrue(acknowledgement["print_problem"])
-        self.assertEqual(acknowledgement["message"], "bed error")
-
-    def test_successful_print_completion_clears_error_latch(self):
-        error = update_mqtt_error_latch(
-            None,
-            {"type": "print", "state": "failed", "code": 11808, "msg": "print failed"},
-        )
-        completed = update_mqtt_error_latch(
-            error,
-            {"type": "print", "action": "finish", "state": "done", "code": 200, "msg": "done"},
-        )
-
-        self.assertFalse(completed["latched"])
-        self.assertFalse(completed["job_failed"])
-        self.assertFalse(completed["print_problem"])
-
 
 class ColorBoxIdTests(unittest.TestCase):
     def test_uses_firmware_box_id(self):

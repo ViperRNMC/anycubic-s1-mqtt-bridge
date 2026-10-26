@@ -13,11 +13,11 @@ from bridge_helpers import (
     discover_mqtt_settings,
     get_color_box_id,
     global_filament_index,
+    normalize_printer_device_name,
     normalize_box_slot_index,
     PRINT_SPEED_MODE_NAMES,
     print_speed_mode_name,
     translate_mqtt_error_message,
-    update_mqtt_error_latch,
 )
 from threading import Thread, Event
 import traceback
@@ -139,7 +139,6 @@ class AnycubicMqttBridge:
         self.obico_entities_created = False
         self.obico_detection_interval = OBICO_DETECTION_INTERVAL
         self.obico_threshold = OBICO_THRESHOLD
-        self.print_error_state = None
         self.obico_pause_latched = False
         self.obico_active = Event()
         if OBICO_ENABLED:
@@ -203,7 +202,9 @@ class AnycubicMqttBridge:
             model = getattr(self, "printer_model", None) or "Unknown"
         device_info = {
             "identifiers": [device_id],
-            "name": getattr(self, "device_name", "Anycubic Printer"),
+            "name": normalize_printer_device_name(
+                getattr(self, "device_name", None), model
+            ),
             "model": model,
             "manufacturer": "Anycubic",
             "sw_version": getattr(self, "printer_version", "Unknown"),
@@ -1715,7 +1716,7 @@ class AnycubicMqttBridge:
 
                 message_type = str(data.get("type") or "").strip().lower()
                 error_report = classify_mqtt_error(data)
-                if message_type in {"print", "error"} or error_report["print_problem"]:
+                if message_type in {"print", "error", "info"} or error_report["print_problem"]:
                     self._publish_mqtt_error_state(data)
 
                 # Check for registered message handlers
@@ -1813,9 +1814,6 @@ class AnycubicMqttBridge:
                     if "version" in printer_data:
                         self.printer_version = printer_data["version"]
                         device_info["sw_version"] = printer_data["version"]
-
-                    if "printerName" in printer_data:
-                        device_info["name"] = printer_data["printerName"]
 
                     # Create individual sensors
                     sensors = []
@@ -2628,20 +2626,15 @@ class AnycubicMqttBridge:
         )
         self.print_error_sensors_created = True
 
-    def _publish_mqtt_error_state(self, message, error_state=None):
+    def _publish_mqtt_error_state(self, message):
         self._create_print_error_sensors()
-        previous_state = getattr(self, "print_error_state", None)
-        error_state = error_state or update_mqtt_error_latch(
-            previous_state, message
+        error_state = classify_mqtt_error(message)
+        error_state.update(
+            {"type": message.get("type"), "action": message.get("action")}
         )
-        if error_state is previous_state:
-            return
-
-        error_state = dict(error_state)
         original_message = str(error_state.get("message") or "")
         error_state["original_message"] = original_message
         error_state["message"] = translate_mqtt_error_message(original_message)
-        self.print_error_state = error_state
         error_state.update(
             {
                 "last_updated": time.strftime("%Y-%m-%d %H:%M:%S"),

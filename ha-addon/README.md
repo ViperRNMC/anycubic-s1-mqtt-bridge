@@ -63,9 +63,9 @@ select is available while a print is active; the fan controls range from 0 to
 Anycubic MQTT reports also create `Job Failed` and `Print Problem` binary
 sensors. Their attributes include the reported state, code, action, MQTT type,
 and error message. Known Anycubic messages are translated to Dutch; the source
-text remains in `original_message`. The active sensors stay on through ordinary MQTT
-acknowledgements and clear after a successful print `finish` or `complete`.
-`Last Print Error` retains the latest error details afterward.
+text remains in `original_message`. Active sensors follow the latest MQTT report
+and can clear on normal acknowledgements. `Last Print Error` retains the latest
+error details afterward.
 
 ### Obico ML
 

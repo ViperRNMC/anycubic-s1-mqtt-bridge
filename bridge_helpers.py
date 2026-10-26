@@ -23,6 +23,14 @@ def print_speed_mode_name(value):
     return PRINT_SPEED_MODE_NAMES.get(mode, f"Unknown ({mode})")
 
 
+def normalize_printer_device_name(name, model):
+    display_name = str(name or "").strip()
+    model_name = str(model or "").strip()
+    if display_name.casefold().startswith("anycubic ") and model_name and model_name.casefold() != "unknown":
+        return model_name
+    return display_name or model_name or "Anycubic Printer"
+
+
 def translate_mqtt_error_message(value):
     text = str(value or "").strip()
     return MQTT_ERROR_MESSAGE_TRANSLATIONS.get(text, text)
@@ -76,31 +84,6 @@ def classify_mqtt_error(message):
         "state": state,
         "code": code,
         "message": text,
-    }
-
-
-def update_mqtt_error_latch(previous_state, message):
-    error_state = classify_mqtt_error(message)
-    message_type = str(message.get("type") or "").strip().lower()
-    action = str(message.get("action") or "").strip().lower()
-
-    if error_state["print_problem"]:
-        return {
-            **error_state,
-            "type": message.get("type"),
-            "action": message.get("action"),
-            "latched": True,
-        }
-
-    if previous_state and previous_state.get("latched"):
-        if message_type != "print" or action not in {"finish", "complete"}:
-            return previous_state
-
-    return {
-        **error_state,
-        "type": message.get("type"),
-        "action": message.get("action"),
-        "latched": False,
     }
 
 
