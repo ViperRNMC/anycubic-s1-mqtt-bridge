@@ -778,9 +778,40 @@ class AnycubicMqttBridge:
             f"{topic_prefix}_color_box_status",
             f"{topic_prefix}_color_box_temp",
             f"{topic_prefix}_active_filament_slot",
+            f"{topic_prefix}_box_fan_level",
         ):
             self.ha_client.publish(
                 f"homeassistant/sensor/{unique_id}/config",
+                "",
+                retain=True,
+            )
+
+        for box_index in range(8):
+            for suffix in ("status", "temp", "active_filament_slot"):
+                unique_id = f"{topic_prefix}_color_box_{box_index}_{suffix}"
+                self.ha_client.publish(
+                    f"homeassistant/sensor/{unique_id}/config",
+                    "",
+                    retain=True,
+                )
+            for slot_index in range(box_index * 4, (box_index + 1) * 4):
+                for entity_type in ("type", "color"):
+                    unique_id = f"{topic_prefix}_filament_{slot_index}_{entity_type}"
+                    self.ha_client.publish(
+                        f"homeassistant/sensor/{unique_id}/config",
+                        "",
+                        retain=True,
+                    )
+
+        for component, unique_id in (
+            ("switch", f"{topic_prefix}_obico_communication"),
+            ("number", f"{topic_prefix}_obico_threshold"),
+            ("binary_sensor", f"{topic_prefix}_obico_failure"),
+            ("sensor", f"{topic_prefix}_obico_confidence"),
+            ("image", f"{topic_prefix}_obico_detection"),
+        ):
+            self.ha_client.publish(
+                f"homeassistant/{component}/{unique_id}/config",
                 "",
                 retain=True,
             )
