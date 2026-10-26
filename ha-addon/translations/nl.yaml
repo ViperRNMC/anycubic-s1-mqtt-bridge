@@ -29,9 +29,3 @@ configuration:
   obico_api_url:
     name: Obico ML-hostnaam (fallback)
     description: Gebruikt als Supervisor de add-on niet vindt of de gevonden hostname onbereikbaar is. Vul alleen een bereikbare hostname of IP in, zonder protocol, poort of API-pad.
-  obico_detection_interval:
-    name: Detectie-interval
-    description: Aantal seconden tussen detecties zolang de printer bezig is.
-  obico_threshold:
-    name: Detectiedrempel
-    description: Waarde tussen 0 en 1; standaard 0.2.

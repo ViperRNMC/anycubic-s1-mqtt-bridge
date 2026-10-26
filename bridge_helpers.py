@@ -7,6 +7,12 @@ PRINT_SPEED_MODE_NAMES = {
     2: "Standard",
     3: "Sport",
 }
+MQTT_ERROR_MESSAGE_TRANSLATIONS = {
+    "耗材不足": "Onvoldoende materialen",
+    "设备忙": "Apparaat bezig",
+    "温度过高": "Temperatuur te hoog",
+    "用户发起": "Door gebruiker gestart",
+}
 
 
 def print_speed_mode_name(value):
@@ -15,6 +21,11 @@ def print_speed_mode_name(value):
     except (TypeError, ValueError):
         return "Unknown"
     return PRINT_SPEED_MODE_NAMES.get(mode, f"Unknown ({mode})")
+
+
+def translate_mqtt_error_message(value):
+    text = str(value or "").strip()
+    return MQTT_ERROR_MESSAGE_TRANSLATIONS.get(text, text)
 
 
 def classify_mqtt_error(message):

@@ -10,6 +10,7 @@ from bridge_helpers import (
     get_color_box_id,
     normalize_box_slot_index,
     print_speed_mode_name,
+    translate_mqtt_error_message,
     update_mqtt_error_latch,
 )
 
@@ -25,6 +26,15 @@ class PrintSpeedModeTests(unittest.TestCase):
 
 
 class MqttErrorTests(unittest.TestCase):
+    def test_translates_known_anycubic_messages_and_preserves_unknown_text(self):
+        self.assertEqual(
+            translate_mqtt_error_message("用户发起"), "Door gebruiker gestart"
+        )
+        self.assertEqual(translate_mqtt_error_message("设备忙"), "Apparaat bezig")
+        self.assertEqual(
+            translate_mqtt_error_message("Unexpected error"), "Unexpected error"
+        )
+
     def test_normal_done_ack_is_not_an_error(self):
         result = classify_mqtt_error(
             {"type": "print", "state": "done", "code": 200, "msg": "getSliceParam/done"}

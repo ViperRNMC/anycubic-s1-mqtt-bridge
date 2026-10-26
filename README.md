@@ -56,7 +56,8 @@ The Print Speed Mode sensor maps Anycubic values to `Silent`, `Standard`, or
 `Sport`; the matching select can change modes while a print is active.
 
 Each detected ACE Pro box and its filament sensors are grouped under a separate
-Home Assistant child device linked to the printer.
+Home Assistant child device linked to the printer. Box names use the firmware
+index, so firmware ID `0` appears as `ACE Pro Box 0`.
 
 The printer serial number is shown in Home Assistant device information; its IP
 address remains available as a diagnostic entity.
@@ -69,7 +70,9 @@ The bridge also exposes `Job Failed` and `Print Problem` binary sensors from
 Anycubic MQTT reports. Their attributes include the reported state, code,
 action, and error message. The active sensors stay on through ordinary MQTT
 acknowledgements and clear after a successful print `finish` or `complete`.
-`Last Print Error` keeps the latest error details available afterward.
+`Last Print Error` keeps the latest error details available afterward. Known
+Anycubic messages are translated to Dutch; the original is retained in the
+`original_message` attribute.
 
 ### Obico ML (Home Assistant add-on)
 
@@ -84,14 +87,14 @@ This requires the add-on's `manager` Supervisor role. The bridge also checks
 `/hc/` every 30 seconds and reports Obico entities unavailable when the API
 cannot be reached.
 
-Set the detection interval and threshold as needed. The threshold is between
-`0` and `1` (default `0.2`). Home Assistant also gets a detection-threshold
-slider with `0.01` steps; its retained MQTT value is restored after add-on
-restarts. Obico entities are grouped under a separate `Obico ML` child device
-in Home Assistant. The bridge registers a communication switch, failure binary
-sensor, confidence sensor, and detection image through MQTT discovery. Detection
-only runs while the printer state is `busy`. When Obico detects a failure during
-`busy`, the bridge presses the existing Pause Print button once for that failure.
+Obico entities are grouped under a separate `Obico ML` child device in Home
+Assistant. It provides retained sliders for the detection interval (`1–3600`
+seconds; default `30`) and threshold (`0–1`, step `0.01`; default `0.2`); both
+values are restored after add-on restarts. The bridge also registers a
+communication switch, failure binary sensor, confidence sensor, and detection
+image through MQTT discovery. Detection only runs while the printer state is
+`busy`. When Obico detects a failure during `busy`, the bridge presses the
+existing Pause Print button once for that failure.
 
 ## Docker Setup
 

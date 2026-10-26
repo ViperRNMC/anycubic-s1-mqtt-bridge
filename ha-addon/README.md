@@ -62,7 +62,8 @@ select is available while a print is active; the fan controls range from 0 to
 
 Anycubic MQTT reports also create `Job Failed` and `Print Problem` binary
 sensors. Their attributes include the reported state, code, action, MQTT type,
-and error message. The active sensors stay on through ordinary MQTT
+and error message. Known Anycubic messages are translated to Dutch; the source
+text remains in `original_message`. The active sensors stay on through ordinary MQTT
 acknowledgements and clear after a successful print `finish` or `complete`.
 `Last Print Error` retains the latest error details afterward.
 
@@ -79,13 +80,13 @@ requires the `manager` Supervisor role.
 The bridge also checks `/hc/` every 30 seconds and marks Obico entities
 unavailable when the backend cannot be reached.
 
-Set the detection interval and threshold as needed. The threshold is between
-`0` and `1` (default `0.2`). When the printer camera is available, the bridge
-creates an Obico communication switch, failure binary sensor, confidence
-sensor, detection image, and detection-threshold slider in Home Assistant. The
-slider ranges from `0` to `1` in `0.01` steps and its value is retained by the
-MQTT broker across add-on restarts. Obico entities are grouped under a separate
-`Obico ML` child device in Home Assistant. Detection only runs while the
+When the printer camera is available, the bridge creates an Obico communication
+switch, failure binary sensor, confidence sensor, detection image, threshold
+slider, and interval slider in Home Assistant. Obico entities are grouped under
+a separate `Obico ML` child device. The threshold ranges from `0` to `1` in
+`0.01` steps (default `0.2`); the interval ranges from `1` to `3600` seconds
+(default `30`). Both slider values are retained by MQTT across add-on restarts.
+Detection only runs while the
 printer state is `busy`. When Obico detects a failure during `busy`, the bridge
 presses the existing Pause Print button once for that failure. It will not
 send another pause until a clean detection or the printer leaves `busy`. The

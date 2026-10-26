@@ -29,9 +29,3 @@ configuration:
   obico_api_url:
     name: Obico ML hostname (fallback)
     description: Used if the Supervisor lookup or discovered hostname is unreachable. Enter a reachable hostname or IP address only; do not include the protocol, port, or API path.
-  obico_detection_interval:
-    name: Detection interval
-    description: Seconds between detections while the printer is busy.
-  obico_threshold:
-    name: Detection threshold
-    description: Value from 0 to 1; default 0.2.

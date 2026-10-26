@@ -16,6 +16,7 @@ from bridge_helpers import (
     normalize_box_slot_index,
     PRINT_SPEED_MODE_NAMES,
     print_speed_mode_name,
+    translate_mqtt_error_message,
     update_mqtt_error_latch,
 )
 from threading import Thread, Event
@@ -136,6 +137,7 @@ class AnycubicMqttBridge:
         self.snapshot_thread = None
         self.obico_thread = None
         self.obico_entities_created = False
+        self.obico_detection_interval = OBICO_DETECTION_INTERVAL
         self.obico_threshold = OBICO_THRESHOLD
         self.print_error_state = None
         self.obico_pause_latched = False
@@ -209,7 +211,7 @@ class AnycubicMqttBridge:
 
     def get_color_box_device_info(self, box_index):
         printer_device_id = self.get_device_info()["identifiers"][0]
-        box_number = int(box_index) + 1
+        box_number = int(box_index)
         return {
             "identifiers": [f"{printer_device_id}_ace_box_{box_index}"],
             "name": f"ACE Pro Box {box_number}",
@@ -576,8 +578,7 @@ class AnycubicMqttBridge:
 
             # Create print controls
             if not hasattr(self, "print_controls_created") or not self.print_controls_created:
-                self._create_print_controls()
-                self.print_controls_created = True
+                self.print_controls_created = self._create_print_controls()
         else:
             logger.error(f"Failed to connect to Anycubic broker, return code: {rc}")
             self.anycubic_connection_state = ConnectionState.ERROR
@@ -735,6 +736,7 @@ class AnycubicMqttBridge:
                     self._mark_migration_cleanup_done()
             except Exception as e:
                 logger.debug(f"Cleanup flag check failed: {e}")
+            self.print_controls_created = self._create_print_controls()
             if OBICO_ENABLED:
                 self._create_obico_entities()
                 self._start_obico_worker()
@@ -812,6 +814,7 @@ class AnycubicMqttBridge:
         for component, unique_id in (
             ("switch", f"{topic_prefix}_obico_communication"),
             ("number", f"{topic_prefix}_obico_threshold"),
+            ("number", f"{topic_prefix}_obico_detection_interval"),
             ("binary_sensor", f"{topic_prefix}_obico_failure"),
             ("sensor", f"{topic_prefix}_obico_confidence"),
             ("image", f"{topic_prefix}_obico_detection"),
@@ -869,6 +872,8 @@ class AnycubicMqttBridge:
             f"homeassistant/switch/{topic_prefix}_obico/state",
             f"homeassistant/number/{topic_prefix}_obico_threshold/state",
             f"homeassistant/number/{topic_prefix}_obico_threshold/set",
+            f"homeassistant/number/{topic_prefix}_obico_detection_interval/state",
+            f"homeassistant/number/{topic_prefix}_obico_detection_interval/set",
         ):
             self.ha_client.publish(topic, "", retain=True)
 
@@ -892,6 +897,8 @@ class AnycubicMqttBridge:
         switch_command_topic = f"homeassistant/switch/{topic_prefix}_obico/set"
         threshold_state_topic = f"homeassistant/number/{topic_prefix}_obico_threshold/state"
         threshold_command_topic = f"homeassistant/number/{topic_prefix}_obico_threshold/set"
+        interval_state_topic = f"homeassistant/number/{topic_prefix}_obico_detection_interval/state"
+        interval_command_topic = f"homeassistant/number/{topic_prefix}_obico_detection_interval/set"
         entities = (
             (
                 "switch",
@@ -923,6 +930,24 @@ class AnycubicMqttBridge:
                     "retain": True,
                     "availability_topic": availability_topic,
                     "icon": "mdi:tune-variant",
+                    "device": device_info,
+                },
+            ),
+            (
+                "number",
+                f"{topic_prefix}_obico_detection_interval",
+                {
+                    "name": "Obico ML Detection Interval",
+                    "state_topic": interval_state_topic,
+                    "command_topic": interval_command_topic,
+                    "min": 1,
+                    "max": 3600,
+                    "step": 1,
+                    "mode": "slider",
+                    "unit_of_measurement": "s",
+                    "retain": True,
+                    "availability_topic": availability_topic,
+                    "icon": "mdi:timer-cog-outline",
                     "device": device_info,
                 },
             ),
@@ -984,6 +1009,10 @@ class AnycubicMqttBridge:
             threshold_command_topic, self._on_obico_threshold_command
         )
         self.ha_client.subscribe(threshold_command_topic)
+        self.ha_client.message_callback_add(
+            interval_command_topic, self._on_obico_interval_command
+        )
+        self.ha_client.subscribe(interval_command_topic)
         self.ha_client.publish(
             switch_state_topic,
             "ON" if self.obico_active.is_set() else "OFF",
@@ -992,6 +1021,11 @@ class AnycubicMqttBridge:
         self.ha_client.publish(
             threshold_state_topic,
             f"{self.obico_threshold:g}",
+            retain=True,
+        )
+        self.ha_client.publish(
+            interval_state_topic,
+            str(self.obico_detection_interval),
             retain=True,
         )
         self.ha_client.publish(availability_topic, "offline", retain=True)
@@ -1025,6 +1059,28 @@ class AnycubicMqttBridge:
         self.ha_client.publish(topic, f"{threshold:g}", retain=True)
         logger.info("Updated Obico ML detection threshold to %.2f", threshold)
 
+    def _on_obico_interval_command(self, client, userdata, msg):
+        try:
+            requested = float(msg.payload.decode("utf-8").strip())
+            if not requested.is_integer():
+                raise ValueError("interval must be a whole number")
+            interval = int(requested)
+        except (UnicodeDecodeError, ValueError):
+            logger.warning("Ignoring invalid Obico interval value: %r", msg.payload)
+            return
+
+        if not 1 <= interval <= 3600:
+            logger.warning("Ignoring out-of-range Obico interval: %s", interval)
+            return
+
+        self.obico_detection_interval = interval
+        topic = (
+            f"homeassistant/number/{self.get_topic_prefix()}"
+            "_obico_detection_interval/state"
+        )
+        self.ha_client.publish(topic, str(interval), retain=True)
+        logger.info("Updated Obico ML detection interval to %s seconds", interval)
+
     def _start_obico_worker(self):
         if not OBICO_ENABLED:
             return
@@ -1033,7 +1089,7 @@ class AnycubicMqttBridge:
             self.obico_thread.start()
             logger.info(
                 "Started Obico ML worker with interval %ss",
-                OBICO_DETECTION_INTERVAL,
+                self.obico_detection_interval,
             )
 
     def obico_worker(self):
@@ -1163,7 +1219,7 @@ class AnycubicMqttBridge:
             except Exception as e:
                 logger.warning("Obico ML detection failed: %s", e)
 
-            next_detection = time.monotonic() + OBICO_DETECTION_INTERVAL
+            next_detection = time.monotonic() + self.obico_detection_interval
 
     def on_ha_disconnect(self, client, userdata, rc):
         """Handle disconnection from Home Assistant broker"""
@@ -1171,6 +1227,9 @@ class AnycubicMqttBridge:
         self.ha_connection_state = ConnectionState.DISCONNECTED
         self.update_connectivity_status()
         self.connection_healthy.clear()
+        self.print_controls_created = False
+        self.temperature_fan_controls_created = False
+        self.obico_entities_created = False
 
         # Let the connection monitor handle reconnection with backoff
 
@@ -1974,8 +2033,7 @@ class AnycubicMqttBridge:
                         
                         # Create print controls if needed
                         if not hasattr(self, "print_controls_created") or not self.print_controls_created:
-                            self._create_print_controls()
-                            self.print_controls_created = True
+                            self.print_controls_created = self._create_print_controls()
 
                     state_data = {
                         "state": self.printer_state,
@@ -2106,8 +2164,7 @@ class AnycubicMqttBridge:
                             
                             # Create print controls
                             if not hasattr(self, "print_controls_created") or not self.print_controls_created:
-                                self._create_print_controls()
-                                self.print_controls_created = True
+                                self.print_controls_created = self._create_print_controls()
 
                     except Exception as e:
                         logger.error(f"Error processing print job data: {e}")
@@ -2379,7 +2436,7 @@ class AnycubicMqttBridge:
         topic_prefix = self.get_topic_prefix()
         
         for box_index in sorted(set(box_ids)):
-            box_number = box_index + 1
+            box_number = box_index
             device_info = self.get_color_box_device_info(box_index)
             # List of box sensors to create for this specific box
             sensors = [
@@ -2444,6 +2501,10 @@ class AnycubicMqttBridge:
 
     def _create_print_controls(self):
         """Create buttons in Home Assistant to control print jobs"""
+        if not self.ha_client or not self.ha_client.is_connected():
+            logger.debug("Deferring print controls until Home Assistant MQTT connects")
+            return False
+
         # Get topic prefix and device info
         topic_prefix = self.get_topic_prefix()
         device_info = self.get_device_info()
@@ -2503,6 +2564,7 @@ class AnycubicMqttBridge:
         logger.info("Created print control buttons in Home Assistant")
         self._create_temperature_fan_controls()
         self._create_print_error_sensors()
+        return True
 
     def _create_print_error_sensors(self):
         if getattr(self, "print_error_sensors_created", False):
@@ -2571,6 +2633,9 @@ class AnycubicMqttBridge:
             return
 
         error_state = dict(error_state)
+        original_message = str(error_state.get("message") or "")
+        error_state["original_message"] = original_message
+        error_state["message"] = translate_mqtt_error_message(original_message)
         self.print_error_state = error_state
         error_state.update(
             {

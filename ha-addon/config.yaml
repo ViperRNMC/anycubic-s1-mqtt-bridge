@@ -28,8 +28,6 @@ options:
   info_update_interval: 30
   obico_enabled: false
   obico_api_url: "localhost"
-  obico_detection_interval: 30
-  obico_threshold: 0.2
 
 schema:
   anycubic_ip: str
@@ -42,5 +40,3 @@ schema:
   info_update_interval: int
   obico_enabled: bool
   obico_api_url: str
-  obico_detection_interval: int(1,)
-  obico_threshold: float(0,1)
