@@ -8,6 +8,13 @@ import sys
 import ssl  # Add this import at the top of your file
 from dotenv import load_dotenv
 import requests
+from bridge_helpers import (
+    discover_mqtt_settings,
+    get_color_box_id,
+    global_filament_index,
+    normalize_box_slot_index,
+    print_speed_mode_name,
+)
 from threading import Thread, Event
 import traceback
 import random
@@ -40,10 +47,11 @@ VERSION = "2026.02.08"
 ANYCUBIC_S1_IP = get_required_env("ANYCUBIC_S1_IP", required=True)
 
 # Home Assistant MQTT Broker - these are required
-HA_BROKER = get_required_env("HA_BROKER", required=True)
+HA_BROKER = get_required_env("HA_BROKER", "homeassistant.local")
 HA_PORT = int(get_required_env("HA_PORT", "1883"))
 HA_USER = get_required_env("HA_USER")  # Optional
 HA_PASS = get_required_env("HA_PASS")  # Optional
+SUPERVISOR_TOKEN = get_required_env("SUPERVISOR_TOKEN", "")
 
 # MQTT Configuration
 KEEPALIVE_INTERVAL = int(get_required_env("KEEPALIVE_INTERVAL", "60"))
@@ -105,6 +113,9 @@ class AnycubicMqttBridge:
         self.reconnect_delay = 1  # Initial delay in seconds
         self.connection_healthy = Event()  # Event to signal healthy connection
         self.snapshot_enabled = Event()  # Event to control snapshot worker
+        self.discovered_color_box_ids = set()
+        self.latest_color_box_data = {}
+        self.legacy_color_box_cleanup_done = False
 
         # Initialize with empty values - we'll get them from discovery or env vars
         self.printer_mode_id = get_required_env("PRINTER_MODE_ID", None)
@@ -125,6 +136,17 @@ class AnycubicMqttBridge:
         logger.info(
             f"Using printer configuration: Model={self.printer_model}, ModeID={self.printer_mode_id}, DeviceID={self.printer_device_id}"
         )
+
+        self.ha_mqtt_settings, mqtt_lookup_result = discover_mqtt_settings(
+            SUPERVISOR_TOKEN,
+            {
+                "broker": HA_BROKER,
+                "port": HA_PORT,
+                "user": HA_USER,
+                "password": HA_PASS,
+            },
+        )
+        logger.info("Home Assistant MQTT lookup: %s", mqtt_lookup_result)
 
         self.setup_clients()
 
@@ -186,8 +208,10 @@ class AnycubicMqttBridge:
 
         # Set up Home Assistant MQTT Client
         self.ha_client = mqtt.Client(client_id="anycubic_bridge_ha")
-        if HA_USER and HA_PASS:
-            self.ha_client.username_pw_set(HA_USER, HA_PASS)
+        if self.ha_mqtt_settings["user"] and self.ha_mqtt_settings["password"]:
+            self.ha_client.username_pw_set(
+                self.ha_mqtt_settings["user"], self.ha_mqtt_settings["password"]
+            )
         self.ha_client.on_connect = self.on_ha_connect
         self.ha_client.on_disconnect = self.on_ha_disconnect
 
@@ -208,9 +232,15 @@ class AnycubicMqttBridge:
         while running:
             try:
                 logger.info(
-                    f"Connecting to Home Assistant broker at {HA_BROKER}:{HA_PORT}"
+                    "Connecting to Home Assistant broker at %s:%s",
+                    self.ha_mqtt_settings["broker"],
+                    self.ha_mqtt_settings["port"],
                 )
-                self.ha_client.connect(HA_BROKER, HA_PORT, keepalive=KEEPALIVE_INTERVAL)
+                self.ha_client.connect(
+                    self.ha_mqtt_settings["broker"],
+                    self.ha_mqtt_settings["port"],
+                    keepalive=KEEPALIVE_INTERVAL,
+                )
                 self.ha_client.loop_start()
 
                 logger.info(
@@ -636,6 +666,9 @@ class AnycubicMqttBridge:
             logger.info("Connected to Home Assistant MQTT broker")
             self.ha_connection_state = ConnectionState.CONNECTED
             self.update_connectivity_status()
+            if not self.legacy_color_box_cleanup_done:
+                self.cleanup_legacy_color_box_entities()
+                self.legacy_color_box_cleanup_done = True
             # Run retained cleanup only once per installation
             try:
                 if not self._has_migration_cleanup_done():
@@ -667,6 +700,22 @@ class AnycubicMqttBridge:
             logger.info("Cleared old retained MQTT discovery entities (camera, filament lights)")
         except Exception as e:
             logger.warning(f"Failed to clear old discovery entities: {e}")
+
+    def cleanup_legacy_color_box_entities(self):
+        topic_prefix = self.get_topic_prefix()
+        for slot_index in range(8):
+            for entity_type in ("type", "color"):
+                self.ha_client.publish(
+                    f"homeassistant/sensor/{topic_prefix}_filament_{slot_index}_{entity_type}/config",
+                    "",
+                    retain=True,
+                )
+                for old_box_index in range(8):
+                    self.ha_client.publish(
+                        f"homeassistant/sensor/{topic_prefix}_color_box_{old_box_index}_filament_{slot_index}_{entity_type}/config",
+                        "",
+                        retain=True,
+                    )
 
     def _has_migration_cleanup_done(self):
         try:
@@ -1398,7 +1447,7 @@ class AnycubicMqttBridge:
                                 "name": "Print Speed Mode",
                                 "unique_id": f"{topic_prefix}_print_speed_mode",
                                 "state_topic": f"homeassistant/sensor/{topic_prefix}/state",
-                                "value_template": "{{ value_json.print_speed_mode }}",
+                                "value_template": "{{ value_json.print_speed_mode_name }}",
                                 "icon": "mdi:speedometer",
                                 "device": device_info,
                             }
@@ -1567,6 +1616,9 @@ class AnycubicMqttBridge:
                     state_data = {
                         "state": printer_data.get("state", "unknown"),
                         "print_speed_mode": printer_data.get("print_speed_mode", 0),
+                        "print_speed_mode_name": print_speed_mode_name(
+                            printer_data.get("print_speed_mode")
+                        ),
                         "ip_address": printer_data.get("ip", ""),
                         "camera_url": printer_data.get("urls", {}).get("rtspUrl", ""),
                         "printer_cn": self.printer_cn if self.printer_cn else "",
@@ -1686,114 +1738,84 @@ class AnycubicMqttBridge:
                             # Get topic prefix for publishing
                             topic_prefix = self.get_topic_prefix()
                             
-                            # Get the number of boxes in this report
-                            num_boxes_in_report = len(data["data"]["multi_color_box"])
-                            
-                            # Track the maximum number of boxes we've ever seen
-                            if not hasattr(self, "max_detected_boxes"):
-                                self.max_detected_boxes = 0
-                            
-                            # Track the number from the previous report for comparison
-                            if not hasattr(self, "previous_report_box_count"):
-                                self.previous_report_box_count = 0
-                            
-                            # Debug log when the number of boxes in the report differs from previous
-                            if self.previous_report_box_count != num_boxes_in_report:
-                                logger.debug(f"Multicolor box count changed: previous report had {self.previous_report_box_count} box(es), current report has {num_boxes_in_report} box(es)")
-                            
-                            self.previous_report_box_count = num_boxes_in_report
-                            
-                            # Update max if we've seen more boxes than before
-                            if num_boxes_in_report > self.max_detected_boxes:
-                                logger.info(f"Detected {num_boxes_in_report} ACE Pro color box(es) - increased from {self.max_detected_boxes}")
-                                self.max_detected_boxes = num_boxes_in_report
-                                
-                                # Create/update color box sensors for new maximum
-                                if not hasattr(self, "color_box_sensors_created") or not self.color_box_sensors_created:
-                                    self._create_color_box_sensors(self.max_detected_boxes)
-                            else:
-                                logger.info(f"Processing {num_boxes_in_report} ACE Pro color box(es) in current report (max seen: {self.max_detected_boxes})")
-                                
-                                # Ensure sensors exist for all boxes we've seen, even if not in this report
-                                if not hasattr(self, "color_box_sensors_created") or not self.color_box_sensors_created:
-                                    self._create_color_box_sensors(self.max_detected_boxes)
-                            
-                            # Initialize storage for color box data if needed
-                            if not hasattr(self, "latest_color_box_data"):
-                                self.latest_color_box_data = {}
-                            
-                            # Process color boxes in this report (may be partial)
-                            # We only update boxes that are present, without invalidating others
-                            for box_index, color_box_data in enumerate(data["data"]["multi_color_box"]):
-                                # Update our stored box data with box index
-                                # This preserves data for boxes not in this report
-                                if box_index not in self.latest_color_box_data:
-                                    self.latest_color_box_data[box_index] = {}
-                                    logger.debug(f"Initializing storage for color box {box_index}")
-                                
-                                self.latest_color_box_data[box_index].update(color_box_data)
-                                
-                                # Create a state update with color box information
+                            box_items = data["data"]["multi_color_box"]
+                            identified_boxes = [
+                                (get_color_box_id(box_data, fallback_index), box_data)
+                                for fallback_index, box_data in enumerate(box_items)
+                            ]
+                            box_ids = {box_id for box_id, _ in identified_boxes}
+                            new_box_ids = box_ids - self.discovered_color_box_ids
+                            if new_box_ids:
+                                logger.info(
+                                    "Detected ACE Pro box IDs: %s", sorted(new_box_ids)
+                                )
+                                self._create_color_box_sensors(new_box_ids)
+                                self.discovered_color_box_ids.update(new_box_ids)
+
+                            for box_id, color_box_data in identified_boxes:
+                                latest_box_data = self.latest_color_box_data.setdefault(
+                                    box_id, {}
+                                )
+                                latest_box_data.update(color_box_data)
                                 box_state = {
-                                    "box_index": box_index,
-                                    "status": color_box_data.get("status", 0),
-                                    "temperature": color_box_data.get("temp", 0),
-                                    "loaded_slot": color_box_data.get("loaded_slot", -1),
-                                    "auto_feed": color_box_data.get("auto_feed", 0),
+                                    "box_id": box_id,
+                                    "status": latest_box_data.get("status", 0),
+                                    "temperature": latest_box_data.get("temp", 0),
+                                    "loaded_slot": latest_box_data.get("loaded_slot", -1),
+                                    "auto_feed": latest_box_data.get("auto_feed", 0),
                                     "last_updated": time.strftime("%Y-%m-%d %H:%M:%S"),
                                 }
-                                
-                                # Publish box state data to Home Assistant with box index
                                 self.ha_client.publish(
-                                    f"homeassistant/sensor/{topic_prefix}/color_box_{box_index}",
+                                    f"homeassistant/sensor/{topic_prefix}/color_box_{box_id}",
                                     json.dumps(box_state),
-                                    retain=True
+                                    retain=True,
                                 )
-                                
-                                # For backward compatibility, also publish first box data without index
-                                if box_index == 0:
+                                if box_id == 0:
                                     self.ha_client.publish(
                                         f"homeassistant/sensor/{topic_prefix}/color_box",
                                         json.dumps(box_state),
-                                        retain=True
+                                        retain=True,
                                     )
-                                
-                                # Process filament slot information
-                                if "slots" in color_box_data:
-                                    slots = color_box_data["slots"]
-                                    for slot in slots:
-                                        slot_index = slot.get("index", 0)
-                                        slot_data = {
-                                            "box_index": box_index,
-                                            "slot_index": slot_index,
-                                            "type": slot.get("type", "Unknown"),
-                                            "status": slot.get("status", 0),
-                                            "color_rgb": slot.get("color", [128, 128, 128]),
-                                            "last_updated": time.strftime("%Y-%m-%d %H:%M:%S"),
-                                        }
-                                        
-                                        # Add hex color for easier use in Home Assistant
-                                        if "color" in slot:
-                                            rgb = slot["color"]
-                                            if len(rgb) == 3:
-                                                slot_data["color_hex"] = f"#{rgb[0]:02x}{rgb[1]:02x}{rgb[2]:02x}"
-                                        
-                                        # Publish slot data to Home Assistant with box index
-                                        self.ha_client.publish(
-                                            f"homeassistant/sensor/{topic_prefix}/color_box_{box_index}_filament_slot_{slot_index}",
-                                            json.dumps(slot_data),
-                                            retain=True
+
+                                for slot_position, slot in enumerate(
+                                    latest_box_data.get("slots", [])
+                                ):
+                                    local_slot = normalize_box_slot_index(
+                                        slot.get("index", slot_position), box_id
+                                    )
+                                    if local_slot is None:
+                                        logger.debug(
+                                            "Ignoring invalid slot index %s for ACE Pro box %s",
+                                            slot.get("index"),
+                                            box_id,
                                         )
-                                        
-                                        # For backward compatibility, also publish first box filament data without box index
-                                        if box_index == 0:
-                                            self.ha_client.publish(
-                                                f"homeassistant/sensor/{topic_prefix}/filament_slot_{slot_index}",
-                                                json.dumps(slot_data),
-                                                retain=True
-                                            )
-                                
-                                logger.debug(f"Published multicolor box {box_index} update with {len(color_box_data.get('slots', []))} slots")
+                                        continue
+                                    global_slot = global_filament_index(
+                                        box_id, local_slot
+                                    )
+                                    slot_data = {
+                                        "box_id": box_id,
+                                        "box_slot_index": local_slot,
+                                        "slot_index": global_slot,
+                                        "type": slot.get("type", "Unknown"),
+                                        "status": slot.get("status", 0),
+                                        "color_rgb": slot.get("color", [128, 128, 128]),
+                                        "last_updated": time.strftime("%Y-%m-%d %H:%M:%S"),
+                                    }
+                                    rgb = slot.get("color")
+                                    if isinstance(rgb, list) and len(rgb) == 3:
+                                        slot_data["color_hex"] = f"#{rgb[0]:02x}{rgb[1]:02x}{rgb[2]:02x}"
+                                    self.ha_client.publish(
+                                        f"homeassistant/sensor/{topic_prefix}/filament_slot_{global_slot}",
+                                        json.dumps(slot_data),
+                                        retain=True,
+                                    )
+
+                                logger.debug(
+                                    "Published multicolor box %s update with %d slots",
+                                    box_id,
+                                    len(latest_box_data.get("slots", [])),
+                                )
                     except Exception as e:
                         logger.error(f"Error processing multicolor box data: {e}")
                         logger.debug(traceback.format_exc())
@@ -1966,18 +1988,18 @@ class AnycubicMqttBridge:
             logger.debug(traceback.format_exc())
             return False
 
-    def _create_color_box_sensors(self, num_boxes):
-        """Create MultiColor Box related sensors in Home Assistant for the detected boxes"""
+    def _create_color_box_sensors(self, box_ids):
+        """Create Home Assistant entities for detected physical ACE Pro boxes."""
         # Get topic prefix and device info
         topic_prefix = self.get_topic_prefix()
         device_info = self.get_device_info()
         
-        # Create sensors only for the actual number of boxes present
-        for box_index in range(num_boxes):
+        for box_index in sorted(set(box_ids)):
+            box_number = box_index + 1
             # List of box sensors to create for this specific box
             sensors = [
                 {
-                    "name": f"MultiColor Box {box_index} Status",
+                    "name": f"ACE Pro Box {box_number} Status",
                     "unique_id": f"{topic_prefix}_color_box_{box_index}_status",
                     "state_topic": f"homeassistant/sensor/{topic_prefix}/color_box_{box_index}",
                     "value_template": "{{ 'Connected' if value_json.status == 1 else 'Disconnected' }}",
@@ -1985,7 +2007,7 @@ class AnycubicMqttBridge:
                     "device": device_info,
                 },
                 {
-                    "name": f"MultiColor Box {box_index} Temperature",
+                    "name": f"ACE Pro Box {box_number} Temperature",
                     "unique_id": f"{topic_prefix}_color_box_{box_index}_temp",
                     "state_topic": f"homeassistant/sensor/{topic_prefix}/color_box_{box_index}",
                     "value_template": "{{ value_json.temperature }}",
@@ -1995,7 +2017,7 @@ class AnycubicMqttBridge:
                     "device": device_info,
                 },
                 {
-                    "name": f"Active Filament Slot (Box {box_index})",
+                    "name": f"ACE Pro Box {box_number} Active Slot",
                     "unique_id": f"{topic_prefix}_color_box_{box_index}_active_filament_slot",
                     "state_topic": f"homeassistant/sensor/{topic_prefix}/color_box_{box_index}",
                     "value_template": "{{ value_json.loaded_slot if value_json.loaded_slot >= 0 else 'None' }}",
@@ -2004,27 +2026,29 @@ class AnycubicMqttBridge:
                 },
             ]
             
-            # Create individual filament slot sensors for this box (8 slots per box for ACE Pro)
-            for i in range(8):
-                # Filament type sensor
-                sensors.append({
-                    "name": f"Box {box_index} Filament {i} Type",
-                    "unique_id": f"{topic_prefix}_color_box_{box_index}_filament_{i}_type",
-                    "state_topic": f"homeassistant/sensor/{topic_prefix}/color_box_{box_index}_filament_slot_{i}",
-                    "value_template": "{{ value_json.type }}",
-                    "icon": "mdi:spool",
-                    "device": device_info,
-                })
-                
-                # Filament color sensor (using RGB format for HA)
-                sensors.append({
-                    "name": f"Box {box_index} Filament {i} Color",
-                    "unique_id": f"{topic_prefix}_color_box_{box_index}_filament_{i}_color",
-                    "state_topic": f"homeassistant/sensor/{topic_prefix}/color_box_{box_index}_filament_slot_{i}",
-                    "value_template": "{{ value_json.color_hex }}",
-                    "icon": "mdi:palette",
-                    "device": device_info,
-                })
+            for local_slot in range(4):
+                global_slot = global_filament_index(box_index, local_slot)
+                slot_topic = f"homeassistant/sensor/{topic_prefix}/filament_slot_{global_slot}"
+                sensors.extend(
+                    (
+                        {
+                            "name": f"Filament {global_slot} Type",
+                            "unique_id": f"{topic_prefix}_filament_{global_slot}_type",
+                            "state_topic": slot_topic,
+                            "value_template": "{{ value_json.type }}",
+                            "icon": "mdi:spool",
+                            "device": device_info,
+                        },
+                        {
+                            "name": f"Filament {global_slot} Color",
+                            "unique_id": f"{topic_prefix}_filament_{global_slot}_color",
+                            "state_topic": slot_topic,
+                            "value_template": "{{ value_json.color_hex }}",
+                            "icon": "mdi:palette",
+                            "device": device_info,
+                        },
+                    )
+                )
             
             # Publish all sensor configurations for this box
             for sensor in sensors:
@@ -2062,34 +2086,12 @@ class AnycubicMqttBridge:
                     },
                 ]
                 
-                # Add backward compatible filament sensors for the first box
-                for i in range(8):
-                    backward_compat_sensors.append({
-                        "name": f"Filament {i} Type",
-                        "unique_id": f"{topic_prefix}_filament_{i}_type",
-                        "state_topic": f"homeassistant/sensor/{topic_prefix}/filament_slot_{i}",
-                        "value_template": "{{ value_json.type }}",
-                        "icon": "mdi:spool",
-                        "device": device_info,
-                    })
-                    
-                    backward_compat_sensors.append({
-                        "name": f"Filament {i} Color",
-                        "unique_id": f"{topic_prefix}_filament_{i}_color",
-                        "state_topic": f"homeassistant/sensor/{topic_prefix}/filament_slot_{i}",
-                        "value_template": "{{ value_json.color_hex }}",
-                        "icon": "mdi:palette",
-                        "device": device_info,
-                    })
-                
                 # Publish backward compatibility sensors
                 for sensor in backward_compat_sensors:
                     discovery_topic = f"homeassistant/sensor/{sensor['unique_id']}/config"
                     self.ha_client.publish(discovery_topic, json.dumps(sensor), retain=True)
         
-        # Mark sensors as created
-        self.color_box_sensors_created = True
-        logger.info(f"Created MultiColor Box sensors in Home Assistant ({num_boxes} device(s), 8 slots each) with backward compatibility")
+        logger.info("Created ACE Pro sensors for box IDs: %s", sorted(set(box_ids)))
 
     def _create_print_controls(self):
         """Create buttons in Home Assistant to control print jobs"""

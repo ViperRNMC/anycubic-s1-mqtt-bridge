@@ -50,6 +50,11 @@ The application uses environment variables for configuration. You can set the fo
 - `SNAPSHOT_INTERVAL_BUSY`: Interval for taking snapshots when printer is busy.
 - `INFO_UPDATE_INTERVAL`: Interval for updating printer information.
 
+For the Home Assistant add-on, the bridge reads the MQTT broker connection
+from the Supervisor MQTT service automatically. The `mqtt_broker`, `mqtt_port`,
+`mqtt_user`, and `mqtt_pass` settings are fallback values for standalone or
+non-Supervisor deployments.
+
 ## Docker Setup
 
 To run the application using Docker, you can use the provided `Dockerfile` and `docker-compose.yml`.
