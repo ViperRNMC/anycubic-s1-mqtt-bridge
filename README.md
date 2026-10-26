@@ -67,7 +67,8 @@ for the nozzle and `0–120 °C` for the bed; fan controls use `0–100%`.
 
 The bridge also exposes `Job Failed` and `Print Problem` binary sensors from
 Anycubic MQTT reports. Their attributes include the reported state, code,
-action, and error message; normal `done` acknowledgements remain clear.
+action, and error message. `Last Print Error` keeps the latest error details
+available after normal `done` acknowledgements clear the active problem sensors.
 
 ### Obico ML (Home Assistant add-on)
 

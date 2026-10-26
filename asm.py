@@ -2588,6 +2588,21 @@ class AnycubicMqttBridge:
                 json.dumps(sensor),
                 retain=True,
             )
+
+        last_error_config = {
+            "name": "Last Print Error",
+            "unique_id": f"{topic_prefix}_last_print_error",
+            "state_topic": f"homeassistant/sensor/{topic_prefix}/last_print_error",
+            "value_template": "{{ value_json.message or value_json.state or value_json.code }}",
+            "json_attributes_topic": f"homeassistant/sensor/{topic_prefix}/last_print_error",
+            "icon": "mdi:message-alert-outline",
+            "device": device_info,
+        }
+        self.ha_client.publish(
+            f"homeassistant/sensor/{last_error_config['unique_id']}/config",
+            json.dumps(last_error_config),
+            retain=True,
+        )
         self.print_error_sensors_created = True
 
     def _publish_mqtt_error_state(self, message, error_state=None):
@@ -2606,6 +2621,11 @@ class AnycubicMqttBridge:
             retain=True,
         )
         if error_state["print_problem"]:
+            self.ha_client.publish(
+                f"homeassistant/sensor/{self.get_topic_prefix()}/last_print_error",
+                json.dumps(error_state),
+                retain=True,
+            )
             logger.warning(
                 "Printer MQTT problem: type=%s action=%s state=%s code=%s message=%s",
                 error_state["type"],
