@@ -4,6 +4,7 @@ from unittest.mock import Mock, patch
 import requests
 
 from bridge_helpers import (
+    classify_mqtt_error,
     discover_mqtt_settings,
     global_filament_index,
     get_color_box_id,
@@ -20,6 +21,25 @@ class PrintSpeedModeTests(unittest.TestCase):
 
     def test_unknown_mode_stays_explicit(self):
         self.assertEqual(print_speed_mode_name(7), "Unknown (7)")
+
+
+class MqttErrorTests(unittest.TestCase):
+    def test_normal_print_acknowledgement_is_not_an_error(self):
+        result = classify_mqtt_error(
+            {"state": "done", "code": 200, "msg": "done"}
+        )
+
+        self.assertFalse(result["job_failed"])
+        self.assertFalse(result["print_problem"])
+
+    def test_failed_state_and_non_success_code_are_reported(self):
+        result = classify_mqtt_error(
+            {"state": "failed", "code": 11808, "msg": "print failed"}
+        )
+
+        self.assertTrue(result["job_failed"])
+        self.assertTrue(result["print_problem"])
+        self.assertEqual(result["code"], 11808)
 
 
 class ColorBoxIdTests(unittest.TestCase):

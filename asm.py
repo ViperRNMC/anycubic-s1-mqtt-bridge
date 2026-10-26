@@ -9,6 +9,7 @@ import ssl  # Add this import at the top of your file
 from dotenv import load_dotenv
 import requests
 from bridge_helpers import (
+    classify_mqtt_error,
     discover_mqtt_settings,
     get_color_box_id,
     global_filament_index,
@@ -1521,6 +1522,19 @@ class AnycubicMqttBridge:
             try:
                 data = json.loads(payload)
 
+                message_type = str(data.get("type", "")).strip().lower()
+                message_state = str(data.get("state", "")).strip().lower()
+                message_code = data.get("code")
+                try:
+                    has_error_code = message_code is not None and int(message_code) != 200
+                except (TypeError, ValueError):
+                    has_error_code = message_code is not None
+                has_error_state = any(
+                    token in message_state for token in ("fail", "error", "abort", "cancel")
+                )
+                if message_type in {"print", "error"} or has_error_code or has_error_state:
+                    self._publish_mqtt_error_state(data)
+
                 # Check for registered message handlers
                 if hasattr(self, "message_handlers"):
                     for handler in self.message_handlers:
@@ -2588,6 +2602,76 @@ class AnycubicMqttBridge:
         # Mark sensors as created
         self.print_sensors_created = True
         logger.info("Created print job sensors in Home Assistant")
+        self._create_print_error_sensors()
+
+    def _create_print_error_sensors(self):
+        if getattr(self, "print_error_sensors_created", False):
+            return
+
+        topic_prefix = self.get_topic_prefix()
+        state_topic = f"homeassistant/sensor/{topic_prefix}/print_error"
+        device_info = self.get_device_info()
+        sensors = (
+            {
+                "name": "Print Failed",
+                "unique_id": f"{topic_prefix}_print_failed",
+                "value_template": "{{ 'ON' if value_json.job_failed else 'OFF' }}",
+                "payload_on": "ON",
+                "payload_off": "OFF",
+                "device_class": "problem",
+                "icon": "mdi:printer-3d-alert",
+                "json_attributes_topic": state_topic,
+                "state_topic": state_topic,
+                "device": device_info,
+            },
+            {
+                "name": "Print Problem",
+                "unique_id": f"{topic_prefix}_print_problem",
+                "value_template": "{{ 'ON' if value_json.print_problem else 'OFF' }}",
+                "payload_on": "ON",
+                "payload_off": "OFF",
+                "device_class": "problem",
+                "icon": "mdi:alert-circle-outline",
+                "json_attributes_topic": state_topic,
+                "state_topic": state_topic,
+                "device": device_info,
+            },
+        )
+        for sensor in sensors:
+            self.ha_client.publish(
+                f"homeassistant/binary_sensor/{sensor['unique_id']}/config",
+                json.dumps(sensor),
+                retain=True,
+            )
+        self.print_error_sensors_created = True
+
+    def _publish_mqtt_error_state(self, message):
+        if not self.ha_client or not self.ha_client.is_connected():
+            return
+
+        self._create_print_error_sensors()
+        error_state = classify_mqtt_error(message)
+        error_state.update(
+            {
+                "mqtt_type": message.get("type"),
+                "action": message.get("action"),
+                "last_updated": time.strftime("%Y-%m-%d %H:%M:%S"),
+            }
+        )
+        self.ha_client.publish(
+            f"homeassistant/sensor/{self.get_topic_prefix()}/print_error",
+            json.dumps(error_state),
+            retain=True,
+        )
+        if error_state["print_problem"]:
+            logger.warning(
+                "Printer MQTT problem: type=%s action=%s state=%s code=%s message=%s",
+                error_state["mqtt_type"],
+                error_state["action"],
+                error_state["state"],
+                error_state["code"],
+                error_state["message"],
+            )
 
     def generate_sign(self, token, ts, nonce):
         """

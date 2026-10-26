@@ -17,6 +17,32 @@ def print_speed_mode_name(value):
     return PRINT_SPEED_MODE_NAMES.get(mode, f"Unknown ({mode})")
 
 
+def classify_mqtt_error(message):
+    state = str(message.get("state") or "").strip().lower()
+    code = message.get("code")
+    text = str(message.get("msg") or "").strip()
+    normalized_text = text.lower()
+    failed_states = ("fail", "error", "abort", "cancel")
+    job_failed = any(token in state for token in failed_states)
+
+    try:
+        code_problem = code is not None and int(code) != 200
+    except (TypeError, ValueError):
+        code_problem = True
+
+    expected_messages = {"", "done", "success", "ok"}
+    message_problem = normalized_text not in expected_messages
+    problem = job_failed or code_problem or message_problem
+
+    return {
+        "job_failed": job_failed,
+        "print_problem": problem,
+        "state": state,
+        "code": code,
+        "message": text,
+    }
+
+
 def get_color_box_id(box_data, fallback_index):
     try:
         return int(box_data.get("id", fallback_index))

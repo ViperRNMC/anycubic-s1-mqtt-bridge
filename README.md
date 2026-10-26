@@ -53,7 +53,9 @@ The application uses environment variables for configuration. You can set the fo
    Supervisor MQTT service; the `HA_*` values remain fallbacks for standalone use.
 
 The Print Speed Mode sensor maps Anycubic values to `Silent`, `Standard`, or
-`Sport`.
+`Sport`. Anycubic MQTT failure reports are exposed as `Print Failed` and `Print
+Problem` binary sensors, with the original code and message available as
+attributes.
 
 ### Obico ML (Home Assistant add-on)
 

@@ -78,6 +78,11 @@ send another pause until a clean detection or the printer leaves `busy`. The
 Obico communication switch still pauses detection without restarting the
 add-on.
 
+The bridge also exposes `Print Failed` and `Print Problem` binary sensors from
+Anycubic MQTT reports. Failure states, non-success codes, and error messages are
+published with their code and message as sensor attributes. Normal `done`/200
+responses do not trigger a problem.
+
 ## Docker Setup
 
 To run the application using Docker, you can use the provided `Dockerfile` and `docker-compose.yml`.
